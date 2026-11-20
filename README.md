@@ -94,4 +94,5 @@ Issues, bytecode/disassembly accuracy reports, and pull requests against `src/`,
 
 ## Credit
 
-Special thanks to [CHEN PROGRAM STUDY](https://web.archive.org/web/20070615052321/http://myweb.hinet.net/home4/cps-chen/main.htm) for creating the game that is a part of my childhood :).
+- Special thanks to [CHEN PROGRAM STUDY](https://web.archive.org/web/20070615052321/http://myweb.hinet.net/home4/cps-chen/main.htm) for creating the game that is a part of my childhood :).
+- [REA (Reverse Engineer Anything)](https://github.com/morluto/rea) MCP server & reverse-engineering toolkit, which powered the binary analysis, PE resource inspection, and decompilation workflow throughout this project.
