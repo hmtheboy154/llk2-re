@@ -1,0 +1,8 @@
+diff --git a/src-llkcn/Form_Main.frm b/src-llkcn/Form_Main.frm
+index 695522b..5bab22f 100644
+--- a/src-llkcn/Form_Main.frm
++++ b/src-llkcn/Form_Main.frm
+@@ -1825,2 +1825,3 @@ Private Sub Timer_PlayMidi_Timer()
+         If m_MidiTrack > 103 Then m_MidiTrack = 101
++        mciSendStringA "close MyMidi", ret, 0, 0
+         If Dir$(MidiPath) <> "" Then Kill MidiPath

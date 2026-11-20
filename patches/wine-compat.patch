@@ -1,0 +1,58 @@
+diff --git a/src-llkcn/Form_Main.frm b/src-llkcn/Form_Main.frm
+index 695522b..3667215 100644
+--- a/src-llkcn/Form_Main.frm
++++ b/src-llkcn/Form_Main.frm
+@@ -1552,3 +1552,3 @@ Private Sub LevelClear()
+         Score = Score + bonus
+-        MsgBox "真是厲害!!恭喜完成所有關卡。" & vbCrLf & "剩餘時間及生命能量可以獲得 " & CStr(bonus) & " 分" & vbCrLf & "累計總得分為 " & CStr(Score) & " 分", vbExclamation, "恭喜破關"
++        MsgBox ChrW$(&H771F) & ChrW$(&H662F) & ChrW$(&H53B2) & ChrW$(&H5BB3) & ChrW$(&H0021) & ChrW$(&H0021) & ChrW$(&H606D) & ChrW$(&H559C) & ChrW$(&H5B8C) & ChrW$(&H6210) & ChrW$(&H6240) & ChrW$(&H6709) & ChrW$(&H95DC) & ChrW$(&H5361) & ChrW$(&H3002) & vbCrLf & ChrW$(&H5269) & ChrW$(&H9918) & ChrW$(&H6642) & ChrW$(&H9593) & ChrW$(&H53CA) & ChrW$(&H751F) & ChrW$(&H547D) & ChrW$(&H80FD) & ChrW$(&H91CF) & ChrW$(&H53EF) & ChrW$(&H4EE5) & ChrW$(&H7372) & ChrW$(&H5F97) & ChrW$(&H0020) & CStr(bonus) & ChrW$(&H0020) & ChrW$(&H5206) & vbCrLf & ChrW$(&H7D2F) & ChrW$(&H8A08) & ChrW$(&H7E3D) & ChrW$(&H5F97) & ChrW$(&H5206) & ChrW$(&H70BA) & ChrW$(&H0020) & CStr(Score) & ChrW$(&H0020) & ChrW$(&H5206), vbExclamation, ChrW$(&H606D) & ChrW$(&H559C) & ChrW$(&H7834) & ChrW$(&H95DC)
+         m_BoardActive = 0
+@@ -1561,3 +1561,3 @@ Private Sub LevelClear()
+         Score = Score + bonus
+-        MsgBox "過關成功，請進入第 " & CStr(Level + 1) & " 關。" & vbCrLf & "剩餘時間能量可以獲得 " & CStr(bonus) & " 分", vbExclamation, "成功"
++        MsgBox ChrW$(&H904E) & ChrW$(&H95DC) & ChrW$(&H6210) & ChrW$(&H529F) & ChrW$(&HFF0C) & ChrW$(&H8ACB) & ChrW$(&H9032) & ChrW$(&H5165) & ChrW$(&H7B2C) & ChrW$(&H0020) & CStr(Level + 1) & ChrW$(&H0020) & ChrW$(&H95DC) & ChrW$(&H3002) & vbCrLf & ChrW$(&H5269) & ChrW$(&H9918) & ChrW$(&H6642) & ChrW$(&H9593) & ChrW$(&H80FD) & ChrW$(&H91CF) & ChrW$(&H53EF) & ChrW$(&H4EE5) & ChrW$(&H7372) & ChrW$(&H5F97) & ChrW$(&H0020) & CStr(bonus) & ChrW$(&H0020) & ChrW$(&H5206), vbExclamation, ChrW$(&H6210) & ChrW$(&H529F)
+         m_BoardActive = 0
+@@ -1577,3 +1577,3 @@ Private Sub DeadlockHandler()
+     Else
+-        MsgBox "已無牌可消除，遊戲結束。", vbExclamation, "殘局"
++        MsgBox ChrW$(&H5DF2) & ChrW$(&H7121) & ChrW$(&H724C) & ChrW$(&H53EF) & ChrW$(&H6D88) & ChrW$(&H9664) & ChrW$(&HFF0C) & ChrW$(&H904A) & ChrW$(&H6232) & ChrW$(&H7D50) & ChrW$(&H675F) & ChrW$(&H3002), vbExclamation, ChrW$(&H6B98) & ChrW$(&H5C40)
+         m_QuitFlag = -1
+@@ -1590,3 +1590,3 @@ Private Sub TimeoutOver()
+     Score = Score + bonus
+-    MsgBox "時間能量用盡，遊戲結束。" & vbCrLf & "剩餘生命能量可以獲得 " & CStr(bonus) & " 分" & vbCrLf & "累計總得分為 " & CStr(Score) & " 分", vbExclamation, "殘局"
++    MsgBox ChrW$(&H6642) & ChrW$(&H9593) & ChrW$(&H80FD) & ChrW$(&H91CF) & ChrW$(&H7528) & ChrW$(&H76E1) & ChrW$(&HFF0C) & ChrW$(&H904A) & ChrW$(&H6232) & ChrW$(&H7D50) & ChrW$(&H675F) & ChrW$(&H3002) & vbCrLf & ChrW$(&H5269) & ChrW$(&H9918) & ChrW$(&H751F) & ChrW$(&H547D) & ChrW$(&H80FD) & ChrW$(&H91CF) & ChrW$(&H53EF) & ChrW$(&H4EE5) & ChrW$(&H7372) & ChrW$(&H5F97) & ChrW$(&H0020) & CStr(bonus) & ChrW$(&H0020) & ChrW$(&H5206) & vbCrLf & ChrW$(&H7D2F) & ChrW$(&H8A08) & ChrW$(&H7E3D) & ChrW$(&H5F97) & ChrW$(&H5206) & ChrW$(&H70BA) & ChrW$(&H0020) & CStr(Score) & ChrW$(&H0020) & ChrW$(&H5206), vbExclamation, ChrW$(&H6B98) & ChrW$(&H5C40)
+     m_QuitFlag = -1
+@@ -1822,3 +1822,3 @@ Private Sub Timer_PlayMidi_Timer()
+     mciSendStringA "status MyMidi mode", st, Len(st), 0
+-    If Left$(st, 7) = "stopped" Or Left$(st, 2) = "停止" Then
++    If Left$(st, 7) = "stopped" Or Left$(st, 2) = ChrW$(&H505C) & ChrW$(&H6B62) Then
+         m_MidiTrack = m_MidiTrack + 1
+diff --git a/src/Form_Main.frm b/src/Form_Main.frm
+index 9f12354..4c20cde 100644
+--- a/src/Form_Main.frm
++++ b/src/Form_Main.frm
+@@ -1556,3 +1556,3 @@ Private Sub LevelClear()
+         Score = Score + bonus + Lives * 50
+-        MsgBox "真是厲害!!恭喜完成所有關卡。" & vbCrLf & "剩餘時間及生命能量可以獲得 " & CStr(bonus) & " 分" & vbCrLf & "累計總得分為 " & CStr(Score) & " 分", vbExclamation, "恭喜破關"
++        MsgBox ChrW$(&H771F) & ChrW$(&H662F) & ChrW$(&H53B2) & ChrW$(&H5BB3) & ChrW$(&H0021) & ChrW$(&H0021) & ChrW$(&H606D) & ChrW$(&H559C) & ChrW$(&H5B8C) & ChrW$(&H6210) & ChrW$(&H6240) & ChrW$(&H6709) & ChrW$(&H95DC) & ChrW$(&H5361) & ChrW$(&H3002) & vbCrLf & ChrW$(&H5269) & ChrW$(&H9918) & ChrW$(&H6642) & ChrW$(&H9593) & ChrW$(&H53CA) & ChrW$(&H751F) & ChrW$(&H547D) & ChrW$(&H80FD) & ChrW$(&H91CF) & ChrW$(&H53EF) & ChrW$(&H4EE5) & ChrW$(&H7372) & ChrW$(&H5F97) & ChrW$(&H0020) & CStr(bonus) & ChrW$(&H0020) & ChrW$(&H5206) & vbCrLf & ChrW$(&H7D2F) & ChrW$(&H8A08) & ChrW$(&H7E3D) & ChrW$(&H5F97) & ChrW$(&H5206) & ChrW$(&H70BA) & ChrW$(&H0020) & CStr(Score) & ChrW$(&H0020) & ChrW$(&H5206), vbExclamation, ChrW$(&H606D) & ChrW$(&H559C) & ChrW$(&H7834) & ChrW$(&H95DC)
+         m_BoardActive = 0
+@@ -1565,3 +1565,3 @@ Private Sub LevelClear()
+         Score = Score + bonus
+-        MsgBox "過關成功，請進入第 " & CStr(Level + 1) & " 關。" & vbCrLf & "剩餘時間能量可以獲得 " & CStr(bonus) & " 分", vbExclamation, "成功"
++        MsgBox ChrW$(&H904E) & ChrW$(&H95DC) & ChrW$(&H6210) & ChrW$(&H529F) & ChrW$(&HFF0C) & ChrW$(&H8ACB) & ChrW$(&H9032) & ChrW$(&H5165) & ChrW$(&H7B2C) & ChrW$(&H0020) & CStr(Level + 1) & ChrW$(&H0020) & ChrW$(&H95DC) & ChrW$(&H3002) & vbCrLf & ChrW$(&H5269) & ChrW$(&H9918) & ChrW$(&H6642) & ChrW$(&H9593) & ChrW$(&H80FD) & ChrW$(&H91CF) & ChrW$(&H53EF) & ChrW$(&H4EE5) & ChrW$(&H7372) & ChrW$(&H5F97) & ChrW$(&H0020) & CStr(bonus) & ChrW$(&H0020) & ChrW$(&H5206), vbExclamation, ChrW$(&H6210) & ChrW$(&H529F)
+         m_BoardActive = 0
+@@ -1581,3 +1581,3 @@ Private Sub DeadlockHandler()
+     Else
+-        MsgBox "已無牌可消除，遊戲結束。", vbExclamation, "殘局"
++        MsgBox ChrW$(&H5DF2) & ChrW$(&H7121) & ChrW$(&H724C) & ChrW$(&H53EF) & ChrW$(&H6D88) & ChrW$(&H9664) & ChrW$(&HFF0C) & ChrW$(&H904A) & ChrW$(&H6232) & ChrW$(&H7D50) & ChrW$(&H675F) & ChrW$(&H3002), vbExclamation, ChrW$(&H6B98) & ChrW$(&H5C40)
+         m_QuitFlag = -1
+@@ -1594,3 +1594,3 @@ Private Sub TimeoutOver()
+     Score = Score + bonus
+-    MsgBox "時間能量用盡，遊戲結束。" & vbCrLf & "剩餘生命能量可以獲得 " & CStr(bonus) & " 分" & vbCrLf & "累計總得分為 " & CStr(Score) & " 分", vbExclamation, "殘局"
++    MsgBox ChrW$(&H6642) & ChrW$(&H9593) & ChrW$(&H80FD) & ChrW$(&H91CF) & ChrW$(&H7528) & ChrW$(&H76E1) & ChrW$(&HFF0C) & ChrW$(&H904A) & ChrW$(&H6232) & ChrW$(&H7D50) & ChrW$(&H675F) & ChrW$(&H3002) & vbCrLf & ChrW$(&H5269) & ChrW$(&H9918) & ChrW$(&H751F) & ChrW$(&H547D) & ChrW$(&H80FD) & ChrW$(&H91CF) & ChrW$(&H53EF) & ChrW$(&H4EE5) & ChrW$(&H7372) & ChrW$(&H5F97) & ChrW$(&H0020) & CStr(bonus) & ChrW$(&H0020) & ChrW$(&H5206) & vbCrLf & ChrW$(&H7D2F) & ChrW$(&H8A08) & ChrW$(&H7E3D) & ChrW$(&H5F97) & ChrW$(&H5206) & ChrW$(&H70BA) & ChrW$(&H0020) & CStr(Score) & ChrW$(&H0020) & ChrW$(&H5206), vbExclamation, ChrW$(&H6B98) & ChrW$(&H5C40)
+     m_QuitFlag = -1
+@@ -1826,3 +1826,3 @@ Private Sub Timer_PlayMidi_Timer()
+     mciSendStringA "status MyMidi mode", st, Len(st), 0
+-    If Left$(st, 7) = "stopped" Or Left$(st, 2) = "停止" Then
++    If Left$(st, 7) = "stopped" Or Left$(st, 2) = ChrW$(&H505C) & ChrW$(&H6B62) Then
+         mciSendStringA "close MyMidi", ret, 0, 0

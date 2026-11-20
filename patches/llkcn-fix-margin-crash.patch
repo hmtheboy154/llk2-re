@@ -1,0 +1,37 @@
+diff --git a/src-llkcn/Form_Main.frm b/src-llkcn/Form_Main.frm
+index 695522b..7b1f3f5 100644
+--- a/src-llkcn/Form_Main.frm
++++ b/src-llkcn/Form_Main.frm
+@@ -1756,19 +1756,19 @@ Private Sub Pic_Show_MouseDown(Button As Integer, Shift As Integer, X As Single,
+         If dx > 0 And dx < 720 And dy > 0 And dy < 550 Then
+             dx = dx \ 40
+             dy = dy \ 50
+-        End If
+-        If Sel1C < 0 Then
+-            If Board(dx, dy).Occupied = -1 Then
+-                Sel1C = dx
+-                Sel1R = dy
+-                If SoundOn = -1 Then PlayWave 202, 1
+-                RedrawBoard
+-            End If
+-        ElseIf Sel2C < 0 Then
+-            If Board(dx, dy).Occupied = -1 Then
+-                If Not (dx = Sel1C And dy = Sel1R) Then
+-                    Sel2C = dx
+-                    Sel2R = dy
++            If Sel1C < 0 Then
++                If Board(dx, dy).Occupied = -1 Then
++                    Sel1C = dx
++                    Sel1R = dy
++                    If SoundOn = -1 Then PlayWave 202, 1
++                    RedrawBoard
++                End If
++            ElseIf Sel2C < 0 Then
++                If Board(dx, dy).Occupied = -1 Then
++                    If Not (dx = Sel1C And dy = Sel1R) Then
++                        Sel2C = dx
++                        Sel2R = dy
++                    End If
+                 End If
+             End If
+         End If

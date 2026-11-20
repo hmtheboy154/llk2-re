@@ -1,0 +1,482 @@
+diff --git a/src-llkcn/BasWave.bas b/src-llkcn/BasWave.bas
+index 5b28303..62de1b3 100644
+--- a/src-llkcn/BasWave.bas
++++ b/src-llkcn/BasWave.bas
+@@ -13,9 +13,24 @@ Public Const SND_NODEFAULT = &H2
+ Public Const SND_MEMORY = &H4
+ Public Const SND_FILENAME = &H20000
+ 
+-' === 52: PlayWave (0x4B51D0 / 0x4B5330) - CUSTOM resource WAVs 201..206 ===
++' === 52: PlayWave (0x4B51D0 / 0x4B5330) - load WAV from assets\sfx\ or CUSTOM resource ===
+ Public Sub PlayWave(vResID As Variant, Optional vFlags As Variant)
+-    m_WaveBuf = LoadResData(vResID, "CUSTOM")
++    Dim wavPath As String
++    Dim fno As Integer
++    Dim fLen As Long
++    wavPath = App.Path & "\assets\sfx\" & CStr(vResID) & ".wav"
++    If Dir$(wavPath) <> "" Then
++        fno = FreeFile
++        Open wavPath For Binary As #fno
++        fLen = LOF(fno)
++        If fLen > 0 Then
++            ReDim m_WaveBuf(0 To fLen - 1) As Byte
++            Get #fno, , m_WaveBuf
++        End If
++        Close #fno
++    Else
++        m_WaveBuf = LoadResData(vResID, "CUSTOM")
++    End If
+     If IsMissing(vFlags) Then
+         vFlags = SND_NODEFAULT Or SND_MEMORY
+     End If
+@@ -34,12 +49,24 @@ Public Function HasSoundCard() As Boolean
+     End If
+ End Function
+ 
+-' === 54: ExtractMidi (0x4B5440 / 0x4B55A0) - MIDI resource 101..103 -> file ===
++' === 54: ExtractMidi (0x4B5440 / 0x4B55A0) - load MIDI from assets\midi\ or resource ===
+ Public Function ExtractMidi(ByVal resId As Integer, resType As String, outPath As String) As Boolean
+     Dim buf() As Byte
+     Dim fno As Integer
++    Dim fLen As Long
++    Dim midPath As String
+     On Error GoTo ErrHandler
+-    buf = LoadResData(resId, resType)
++    midPath = App.Path & "\assets\midi\" & CStr(resId) & ".mid"
++    If Dir$(midPath) <> "" Then
++        fno = FreeFile
++        Open midPath For Binary As #fno
++        fLen = LOF(fno)
++        ReDim buf(0 To fLen - 1) As Byte
++        Get #fno, , buf
++        Close #fno
++    Else
++        buf = LoadResData(resId, resType)
++    End If
+     fno = FreeFile
+     Open outPath For Binary As #fno
+     Put #fno, , buf
+diff --git a/src-llkcn/Form_Author.frm b/src-llkcn/Form_Author.frm
+index 6412fd9..ecc4cee 100644
+--- a/src-llkcn/Form_Author.frm
++++ b/src-llkcn/Form_Author.frm
+@@ -13,7 +13,6 @@ Begin VB.Form Form_Author
+    MaxButton       =   0 'False 
+    MinButton       =   0 'False 
+    ShowInTaskbar   =   0 'False 
+-   Picture         =   "Form_Author.frx":0000 
+    StartUpPosition =   2 
+ End 
+ Attribute VB_Name = "Form_Author"
+@@ -32,4 +31,5 @@ Private Sub Form_Load()
+     If App.PrevInstance Then End
+     Form_Author.Width = Form_Author.Width - Form_Author.ScaleWidth * TwipsX + 370 * TwipsX
+     Form_Author.Height = Form_Author.Height - Form_Author.ScaleHeight * TwipsY + 310 * TwipsY
++    Set Me.Picture = LoadAssetPic("Form_Author_Picture")
+ End Sub
+diff --git a/src-llkcn/Form_Explain.frm b/src-llkcn/Form_Explain.frm
+index 85cdf0a..94e8afa 100644
+--- a/src-llkcn/Form_Explain.frm
++++ b/src-llkcn/Form_Explain.frm
+@@ -14,7 +14,6 @@ Begin VB.Form Form_Explain
+    MaxButton       =   0 'False 
+    MinButton       =   0 'False 
+    ShowInTaskbar   =   0 'False 
+-   Picture         =   "Form_Explain.frx":0000 
+    StartUpPosition =   2 
+ End 
+ Attribute VB_Name = "Form_Explain"
+@@ -33,4 +32,5 @@ Private Sub Form_Load()
+     If App.PrevInstance Then End
+     Form_Explain.Width = Form_Explain.Width - Form_Explain.ScaleWidth * TwipsX + 640 * TwipsX
+     Form_Explain.Height = Form_Explain.Height - Form_Explain.ScaleHeight * TwipsY + 376 * TwipsY
++    Set Me.Picture = LoadAssetPic("Form_Explain_Picture")
+ End Sub
+diff --git a/src-llkcn/Form_Main.frm b/src-llkcn/Form_Main.frm
+index 695522b..9ea5360 100644
+--- a/src-llkcn/Form_Main.frm
++++ b/src-llkcn/Form_Main.frm
+@@ -11,7 +11,6 @@ Begin VB.Form Form_Main
+    BorderStyle     =   1 
+    LinkTopic       =   "Form1" 
+    MaxButton       =   0 'False 
+-   Icon            =   "Form_Main.frx":0000 
+    StartUpPosition =   1 
+    Begin VB.Timer Timer_PlayMidi 
+       Enabled         =   0 'False 
+@@ -19,7 +18,6 @@ Begin VB.Form Form_Main
+       Left            =   5040 
+    End 
+    Begin VB.PictureBox Pic_Title 
+-      Picture         =   "Form_Main.frx":08CA 
+       BackColor       =   &H80000005& 
+       ForeColor       =   &H80000008& 
+       Left            =   3360 
+@@ -36,7 +34,6 @@ Begin VB.Form Form_Main
+    End 
+    Begin VB.PictureBox Pic_Level 
+       Index           =   6 
+-      Picture         =   "Form_Main.frx":B681 
+       BackColor       =   &H80000005& 
+       ForeColor       =   &H80000008& 
+       Left            =   1200 
+@@ -53,7 +50,6 @@ Begin VB.Form Form_Main
+    End 
+    Begin VB.PictureBox Pic_Level 
+       Index           =   5 
+-      Picture         =   "Form_Main.frx":1AC4C 
+       BackColor       =   &H80000005& 
+       ForeColor       =   &H80000008& 
+       Left            =   1320 
+@@ -70,7 +66,6 @@ Begin VB.Form Form_Main
+    End 
+    Begin VB.PictureBox Pic_Level 
+       Index           =   4 
+-      Picture         =   "Form_Main.frx":2F303 
+       BackColor       =   &H80000005& 
+       ForeColor       =   &H80000008& 
+       Left            =   1080 
+@@ -87,7 +82,6 @@ Begin VB.Form Form_Main
+    End 
+    Begin VB.PictureBox Pic_Level 
+       Index           =   3 
+-      Picture         =   "Form_Main.frx":40805 
+       BackColor       =   &H80000005& 
+       ForeColor       =   &H80000008& 
+       Left            =   840 
+@@ -104,7 +98,6 @@ Begin VB.Form Form_Main
+    End 
+    Begin VB.PictureBox Pic_Level 
+       Index           =   2 
+-      Picture         =   "Form_Main.frx":48FE8 
+       BackColor       =   &H80000005& 
+       ForeColor       =   &H80000008& 
+       Left            =   600 
+@@ -121,7 +114,6 @@ Begin VB.Form Form_Main
+    End 
+    Begin VB.PictureBox Pic_Level 
+       Index           =   1 
+-      Picture         =   "Form_Main.frx":5AF33 
+       BackColor       =   &H80000005& 
+       ForeColor       =   &H80000008& 
+       Left            =   480 
+@@ -138,7 +130,6 @@ Begin VB.Form Form_Main
+    End 
+    Begin VB.PictureBox Pic_Level 
+       Index           =   0 
+-      Picture         =   "Form_Main.frx":66001 
+       BackColor       =   &H80000005& 
+       ForeColor       =   &H80000008& 
+       Left            =   360 
+@@ -154,7 +145,6 @@ Begin VB.Form Form_Main
+       Appearance      =   0 
+    End 
+    Begin VB.PictureBox Pic_Data 
+-      Picture         =   "Form_Main.frx":6F7C1 
+       BackColor       =   &H80000005& 
+       ForeColor       =   &H80000008& 
+       Left            =   240 
+@@ -170,7 +160,6 @@ Begin VB.Form Form_Main
+       Appearance      =   0 
+    End 
+    Begin VB.PictureBox Pic_MjData 
+-      Picture         =   "Form_Main.frx":7121E 
+       BackColor       =   &H80000005& 
+       ForeColor       =   &H80000008& 
+       Left            =   120 
+@@ -1644,6 +1633,21 @@ Private Sub Form_Load()
+     Dim buf As String
+     Dim n As Long
+     If App.PrevInstance Then End
++    On Error Resume Next
++    If Dir$(App.Path & "\assets\icons\Form_Main_Icon.ico") <> "" Then
++        Set Me.Icon = LoadPicture(App.Path & "\assets\icons\Form_Main_Icon.ico")
++    End If
++    Set Pic_Title.Picture = LoadAssetPic("Pic_Title_Picture")
++    Set Pic_Level(6).Picture = LoadAssetPic("Pic_Level_6_Picture")
++    Set Pic_Level(5).Picture = LoadAssetPic("Pic_Level_5_Picture")
++    Set Pic_Level(4).Picture = LoadAssetPic("Pic_Level_4_Picture")
++    Set Pic_Level(3).Picture = LoadAssetPic("Pic_Level_3_Picture")
++    Set Pic_Level(2).Picture = LoadAssetPic("Pic_Level_2_Picture")
++    Set Pic_Level(1).Picture = LoadAssetPic("Pic_Level_1_Picture")
++    Set Pic_Level(0).Picture = LoadAssetPic("Pic_Level_0_Picture")
++    Set Pic_Data.Picture = LoadAssetPic("Pic_Data_Picture")
++    Set Pic_MjData.Picture = LoadAssetPic("Pic_MjData_Picture")
++    On Error GoTo 0
+     buf = Space$(255)
+     n = GetWindowsDirectoryA(buf, 255)
+     WinDirPath = Left$(buf, n)
+diff --git a/src-llkcn/Mainbas.bas b/src-llkcn/Mainbas.bas
+index d1c2414..1a96659 100644
+--- a/src-llkcn/Mainbas.bas
++++ b/src-llkcn/Mainbas.bas
+@@ -109,3 +109,18 @@ Public Sub DelayMs(ms As Integer)
+         DoEvents
+     Loop
+ End Sub
++
++' === External-assets helper (external-assets.patch) ===
++Public Function LoadAssetPic(ByVal stem As String) As Object
++    Dim base As String
++    Dim p As String
++    base = App.Path & "\assets\images\" & stem
++    p = base & ".bmp"
++    If Dir$(p) = "" Then p = base & ".jpg"
++    If Dir$(p) = "" Then p = base & ".gif"
++    If Dir$(p) <> "" Then
++        On Error Resume Next
++        Set LoadAssetPic = LoadPicture(p)
++        On Error GoTo 0
++    End If
++End Function
+diff --git a/src-llkcn/Project1.vbp b/src-llkcn/Project1.vbp
+index 63740df..e233ca7 100644
+--- a/src-llkcn/Project1.vbp
++++ b/src-llkcn/Project1.vbp
+@@ -1,5 +1,4 @@
+ Type=Exe
+-ResFile32="Project1.res"
+ Form=Form_Main.frm
+ Module=Mainbas; Mainbas.bas
+ Form=Form_Table.frm
+diff --git a/src/BasWave.bas b/src/BasWave.bas
+index 5b28303..62de1b3 100644
+--- a/src/BasWave.bas
++++ b/src/BasWave.bas
+@@ -13,9 +13,24 @@ Public Const SND_NODEFAULT = &H2
+ Public Const SND_MEMORY = &H4
+ Public Const SND_FILENAME = &H20000
+ 
+-' === 52: PlayWave (0x4B51D0 / 0x4B5330) - CUSTOM resource WAVs 201..206 ===
++' === 52: PlayWave (0x4B51D0 / 0x4B5330) - load WAV from assets\sfx\ or CUSTOM resource ===
+ Public Sub PlayWave(vResID As Variant, Optional vFlags As Variant)
+-    m_WaveBuf = LoadResData(vResID, "CUSTOM")
++    Dim wavPath As String
++    Dim fno As Integer
++    Dim fLen As Long
++    wavPath = App.Path & "\assets\sfx\" & CStr(vResID) & ".wav"
++    If Dir$(wavPath) <> "" Then
++        fno = FreeFile
++        Open wavPath For Binary As #fno
++        fLen = LOF(fno)
++        If fLen > 0 Then
++            ReDim m_WaveBuf(0 To fLen - 1) As Byte
++            Get #fno, , m_WaveBuf
++        End If
++        Close #fno
++    Else
++        m_WaveBuf = LoadResData(vResID, "CUSTOM")
++    End If
+     If IsMissing(vFlags) Then
+         vFlags = SND_NODEFAULT Or SND_MEMORY
+     End If
+@@ -34,12 +49,24 @@ Public Function HasSoundCard() As Boolean
+     End If
+ End Function
+ 
+-' === 54: ExtractMidi (0x4B5440 / 0x4B55A0) - MIDI resource 101..103 -> file ===
++' === 54: ExtractMidi (0x4B5440 / 0x4B55A0) - load MIDI from assets\midi\ or resource ===
+ Public Function ExtractMidi(ByVal resId As Integer, resType As String, outPath As String) As Boolean
+     Dim buf() As Byte
+     Dim fno As Integer
++    Dim fLen As Long
++    Dim midPath As String
+     On Error GoTo ErrHandler
+-    buf = LoadResData(resId, resType)
++    midPath = App.Path & "\assets\midi\" & CStr(resId) & ".mid"
++    If Dir$(midPath) <> "" Then
++        fno = FreeFile
++        Open midPath For Binary As #fno
++        fLen = LOF(fno)
++        ReDim buf(0 To fLen - 1) As Byte
++        Get #fno, , buf
++        Close #fno
++    Else
++        buf = LoadResData(resId, resType)
++    End If
+     fno = FreeFile
+     Open outPath For Binary As #fno
+     Put #fno, , buf
+diff --git a/src/Form_Author.frm b/src/Form_Author.frm
+index 48accde..c9c4350 100644
+--- a/src/Form_Author.frm
++++ b/src/Form_Author.frm
+@@ -13,7 +13,6 @@ Begin VB.Form Form_Author
+    MaxButton       =   0 'False 
+    MinButton       =   0 'False 
+    ShowInTaskbar   =   0 'False 
+-   Picture         =   "Form_Author.frx":0000 
+    StartUpPosition =   2 
+ End 
+ Attribute VB_Name = "Form_Author"
+@@ -32,4 +31,5 @@ Private Sub Form_Load()
+     If App.PrevInstance Then End
+     Form_Author.Width = Form_Author.Width - Form_Author.ScaleWidth * TwipsX + 370 * TwipsX
+     Form_Author.Height = Form_Author.Height - Form_Author.ScaleHeight * TwipsY + 310 * TwipsY
++    Set Me.Picture = LoadAssetPic("Form_Author_Picture")
+ End Sub
+diff --git a/src/Form_Explain.frm b/src/Form_Explain.frm
+index 35c7976..b6fee4d 100644
+--- a/src/Form_Explain.frm
++++ b/src/Form_Explain.frm
+@@ -14,7 +14,6 @@ Begin VB.Form Form_Explain
+    MaxButton       =   0 'False 
+    MinButton       =   0 'False 
+    ShowInTaskbar   =   0 'False 
+-   Picture         =   "Form_Explain.frx":0000 
+    StartUpPosition =   2 
+ End 
+ Attribute VB_Name = "Form_Explain"
+@@ -33,4 +32,5 @@ Private Sub Form_Load()
+     If App.PrevInstance Then End
+     Form_Explain.Width = Form_Explain.Width - Form_Explain.ScaleWidth * TwipsX + 640 * TwipsX
+     Form_Explain.Height = Form_Explain.Height - Form_Explain.ScaleHeight * TwipsY + 376 * TwipsY
++    Set Me.Picture = LoadAssetPic("Form_Explain_Picture")
+ End Sub
+diff --git a/src/Form_Main.frm b/src/Form_Main.frm
+index 9f12354..f7e6700 100644
+--- a/src/Form_Main.frm
++++ b/src/Form_Main.frm
+@@ -11,7 +11,6 @@ Begin VB.Form Form_Main
+    BorderStyle     =   1 
+    LinkTopic       =   "Form1" 
+    MaxButton       =   0 'False 
+-   Icon            =   "Form_Main.frx":0000 
+    StartUpPosition =   1 
+    Begin VB.Timer Timer_PlayMidi 
+       Enabled         =   0 'False 
+@@ -19,7 +18,6 @@ Begin VB.Form Form_Main
+       Left            =   5040 
+    End 
+    Begin VB.PictureBox Pic_Title 
+-      Picture         =   "Form_Main.frx":08CA 
+       BackColor       =   &H80000005& 
+       ForeColor       =   &H80000008& 
+       Left            =   3360 
+@@ -36,7 +34,6 @@ Begin VB.Form Form_Main
+    End 
+    Begin VB.PictureBox Pic_Level 
+       Index           =   6 
+-      Picture         =   "Form_Main.frx":B681 
+       BackColor       =   &H80000005& 
+       ForeColor       =   &H80000008& 
+       Left            =   1200 
+@@ -53,7 +50,6 @@ Begin VB.Form Form_Main
+    End 
+    Begin VB.PictureBox Pic_Level 
+       Index           =   5 
+-      Picture         =   "Form_Main.frx":1AC4C 
+       BackColor       =   &H80000005& 
+       ForeColor       =   &H80000008& 
+       Left            =   1320 
+@@ -70,7 +66,6 @@ Begin VB.Form Form_Main
+    End 
+    Begin VB.PictureBox Pic_Level 
+       Index           =   4 
+-      Picture         =   "Form_Main.frx":2F303 
+       BackColor       =   &H80000005& 
+       ForeColor       =   &H80000008& 
+       Left            =   1080 
+@@ -87,7 +82,6 @@ Begin VB.Form Form_Main
+    End 
+    Begin VB.PictureBox Pic_Level 
+       Index           =   3 
+-      Picture         =   "Form_Main.frx":40805 
+       BackColor       =   &H80000005& 
+       ForeColor       =   &H80000008& 
+       Left            =   840 
+@@ -104,7 +98,6 @@ Begin VB.Form Form_Main
+    End 
+    Begin VB.PictureBox Pic_Level 
+       Index           =   2 
+-      Picture         =   "Form_Main.frx":48FE8 
+       BackColor       =   &H80000005& 
+       ForeColor       =   &H80000008& 
+       Left            =   600 
+@@ -121,7 +114,6 @@ Begin VB.Form Form_Main
+    End 
+    Begin VB.PictureBox Pic_Level 
+       Index           =   1 
+-      Picture         =   "Form_Main.frx":5AF33 
+       BackColor       =   &H80000005& 
+       ForeColor       =   &H80000008& 
+       Left            =   480 
+@@ -138,7 +130,6 @@ Begin VB.Form Form_Main
+    End 
+    Begin VB.PictureBox Pic_Level 
+       Index           =   0 
+-      Picture         =   "Form_Main.frx":66001 
+       BackColor       =   &H80000005& 
+       ForeColor       =   &H80000008& 
+       Left            =   360 
+@@ -154,7 +145,6 @@ Begin VB.Form Form_Main
+       Appearance      =   0 
+    End 
+    Begin VB.PictureBox Pic_Data 
+-      Picture         =   "Form_Main.frx":6F7C1 
+       BackColor       =   &H80000005& 
+       ForeColor       =   &H80000008& 
+       Left            =   240 
+@@ -170,7 +160,6 @@ Begin VB.Form Form_Main
+       Appearance      =   0 
+    End 
+    Begin VB.PictureBox Pic_MjData 
+-      Picture         =   "Form_Main.frx":7121E 
+       BackColor       =   &H80000005& 
+       ForeColor       =   &H80000008& 
+       Left            =   120 
+@@ -1648,6 +1637,21 @@ Private Sub Form_Load()
+     Dim buf As String
+     Dim n As Long
+     If App.PrevInstance Then End
++    On Error Resume Next
++    If Dir$(App.Path & "\assets\icons\Form_Main_Icon.ico") <> "" Then
++        Set Me.Icon = LoadPicture(App.Path & "\assets\icons\Form_Main_Icon.ico")
++    End If
++    Set Pic_Title.Picture = LoadAssetPic("Pic_Title_Picture")
++    Set Pic_Level(6).Picture = LoadAssetPic("Pic_Level_6_Picture")
++    Set Pic_Level(5).Picture = LoadAssetPic("Pic_Level_5_Picture")
++    Set Pic_Level(4).Picture = LoadAssetPic("Pic_Level_4_Picture")
++    Set Pic_Level(3).Picture = LoadAssetPic("Pic_Level_3_Picture")
++    Set Pic_Level(2).Picture = LoadAssetPic("Pic_Level_2_Picture")
++    Set Pic_Level(1).Picture = LoadAssetPic("Pic_Level_1_Picture")
++    Set Pic_Level(0).Picture = LoadAssetPic("Pic_Level_0_Picture")
++    Set Pic_Data.Picture = LoadAssetPic("Pic_Data_Picture")
++    Set Pic_MjData.Picture = LoadAssetPic("Pic_MjData_Picture")
++    On Error GoTo 0
+     buf = Space$(255)
+     n = GetWindowsDirectoryA(buf, 255)
+     WinDirPath = Left$(buf, n)
+diff --git a/src/Mainbas.bas b/src/Mainbas.bas
+index d1c2414..1a96659 100644
+--- a/src/Mainbas.bas
++++ b/src/Mainbas.bas
+@@ -109,3 +109,18 @@ Public Sub DelayMs(ms As Integer)
+         DoEvents
+     Loop
+ End Sub
++
++' === External-assets helper (external-assets.patch) ===
++Public Function LoadAssetPic(ByVal stem As String) As Object
++    Dim base As String
++    Dim p As String
++    base = App.Path & "\assets\images\" & stem
++    p = base & ".bmp"
++    If Dir$(p) = "" Then p = base & ".jpg"
++    If Dir$(p) = "" Then p = base & ".gif"
++    If Dir$(p) <> "" Then
++        On Error Resume Next
++        Set LoadAssetPic = LoadPicture(p)
++        On Error GoTo 0
++    End If
++End Function
+diff --git a/src/Project1.vbp b/src/Project1.vbp
+index 7c20b02..f89a9b1 100644
+--- a/src/Project1.vbp
++++ b/src/Project1.vbp
+@@ -1,5 +1,4 @@
+ Type=Exe
+-ResFile32="Project1.res"
+ Form=Form_Main.frm
+ Module=Mainbas; Mainbas.bas
+ Form=Form_Table.frm

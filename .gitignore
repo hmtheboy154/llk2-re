@@ -1,0 +1,30 @@
+# Extracted & modded game assets (do not upload copyrighted originals)
+assets/
+src/assets/
+src-llkcn/assets/
+tools/assets_mods/output/
+tools/assets_mod/output/
+
+# Generated VB5 binary resources & compiled outputs
+*.frx
+*.FRX
+*.res
+*.RES
+*.exe
+*.EXE
+*.obj
+*.OBJ
+*.exp
+*.lib
+*.log
+*.tmp
+build/
+
+# Original game archives / dumps
+*.zip
+*.bin
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
