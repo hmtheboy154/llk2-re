@@ -1,0 +1,64 @@
+{
+  "app.title": "连连看2",
+  "dialog.explain.title": "游戏规则",
+  "dialog.author.title": "作者",
+  "dialog.table.title": "连连看2",
+
+  "menu.game": "游戏(&G)",
+  "menu.game.new": "新局(&N)",
+  "menu.game.giveup": "放弃(&Q)",
+  "menu.game.record": "最佳记录(&R)",
+  "menu.game.exit": "结束离开(&X)",
+
+  "menu.audio": "背景声音(&B)",
+  "menu.audio.music": "音乐(&M)",
+  "menu.audio.sound": "音效(&S)",
+
+  "menu.settings": "设置(&S)",
+  "menu.settings.language": "语言(&L)",
+  "lang.zh_TW": "繁體中文 (zh-TW)",
+  "lang.zh_CN": "简体中文 (zh-CN)",
+
+  "menu.settings.midi_tracks": "MIDI 音轨",
+  "menu.settings.track_101": "音轨 1 (101.mid)",
+  "menu.settings.track_102": "音轨 2 (102.mid — FF4 Town)",
+  "menu.settings.track_103": "音轨 3 (103.mid — Canyon)",
+
+  "menu.settings.midi_device": "MIDI 播放设备",
+  "menu.settings.midi_native": "系统原生 MIDI 设备",
+  "menu.settings.midi_embedded": "内置 SoundFont 合成器",
+
+  "menu.settings.scale": "画面缩放",
+  "menu.settings.scale_1x": "1× (768×550 原始大小)",
+  "menu.settings.scale_1_5x": "1.5× (1152×825)",
+  "menu.settings.scale_2x": "2× (1536×1100)",
+  "menu.settings.scale_3x": "3× (2304×1650)",
+  "menu.settings.scale_free": "自由缩放 (保持比例)",
+  "menu.settings.filter_nearest": "像素锐利 (Nearest)",
+  "menu.settings.filter_bilinear": "平滑柔化 (Bilinear)",
+
+  "menu.settings.import_hst": "导入旧版记录 (d4s.hst)...",
+  "menu.settings.export_hst": "导出旧版记录 (d4s.hst)...",
+
+  "menu.about": "关于(&A)",
+  "menu.about.explain": "游戏规则(&E)",
+  "menu.about.author": "作者(&P)",
+
+  "table.col.rank": "名次",
+  "table.col.name": "姓名",
+  "table.col.score": "积分",
+  "table.prompt.name": "玩家姓名",
+  "table.btn.ok": "确定",
+  "table.default_player": "Player",
+
+  "msg.stage_clear.title": "成功",
+  "msg.stage_clear.body": "过关成功，请进入第 {level} 关。\n剩余时间能量可以获得 {bonus} 分",
+  "msg.all_clear.title": "恭喜破关",
+  "msg.all_clear.body": "真是厉害!!恭喜完成所有关卡。\n剩余时间及生命能量可以获得 {bonus} 分\n累计总得分为 {score} 分",
+  "msg.no_moves.title": "残局",
+  "msg.no_moves.body": "已无牌可消除，游戏结束。",
+  "msg.timeout.title": "残局",
+  "msg.timeout.body": "时间能量用尽，游戏结束。\n剩余生命能量可以获得 {bonus} 分\n累计总得分为 {score} 分",
+  "msg.missing_assets.title": "缺少游戏素材",
+  "msg.missing_assets.body": "找不到游戏素材文件夹 (assets/)。\n请先运行以下命令从原版主程序提取素材：\npython3 tools/extract_assets.py lianliankan2.ExE --bmp"
+}

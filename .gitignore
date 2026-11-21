@@ -1,0 +1,30 @@
+# Extracted game assets (do not upload copyrighted originals)
+assets/
+
+# CMake & C++ build directories / artifacts
+build/
+cmake-build-*/
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dll
+*.dylib
+*.exe
+*.EXE
+
+# User runtime configuration & high-score files
+config.json
+scores.json
+*.hst
+*.HST
+
+# Original game archives / dumps
+*.zip
+*.bin
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo

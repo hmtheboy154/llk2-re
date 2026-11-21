@@ -1,0 +1,172 @@
+#include "core/config.hpp"
+#include "core/game_state.hpp"
+#include "media/asset_manager.hpp"
+#include "media/audio_engine.hpp"
+#include "media/board_renderer.hpp"
+
+#include <cassert>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <string>
+#include <vector>
+
+using namespace llk2::core;
+using namespace llk2::media;
+
+static std::filesystem::path ensure_test_assets(bool& created_temp) {
+    created_temp = false;
+    std::filesystem::path src_dir(LLK2_SOURCE_DIR);
+
+    // Check if assets already exist in standard locations
+    for (const auto& candidate : {src_dir / "assets", src_dir / "src" / "assets", src_dir / "src-llkcn" / "assets"}) {
+        if (std::filesystem::exists(candidate / "images") && std::filesystem::exists(candidate / "sfx")) {
+            return candidate;
+        }
+    }
+
+    // Extract from original D4s.exe into a temporary test directory if available
+    std::filesystem::path exe_candidate = src_dir.parent_path() / "D4s.exe";
+    std::filesystem::path extractor = src_dir / "tools" / "extract_assets.py";
+    if (std::filesystem::exists(exe_candidate) && std::filesystem::exists(extractor)) {
+        auto tmp_assets = std::filesystem::temp_directory_path() / "llk2_test_extracted_assets";
+        std::string cmd = "python3 \"" + extractor.string() + "\" \"" + exe_candidate.string() +
+                          "\" -o \"" + tmp_assets.string() + "\" > /dev/null 2>&1";
+        if (std::system(cmd.c_str()) == 0 && std::filesystem::exists(tmp_assets / "images")) {
+            created_temp = true;
+            return tmp_assets;
+        }
+    }
+    return {};
+}
+
+static void test_renderer_and_audio_with_assets(const std::filesystem::path& assets_dir) {
+    AssetManager assets;
+    std::string err;
+    bool ok = assets.load_from_dir(assets_dir, &err);
+    if (!ok) {
+        std::fprintf(stderr, "AssetManager::load_from_dir failed: %s\n", err.c_str());
+    }
+    assert(ok);
+    assert(assets.is_loaded());
+    assert(assets.pic_title().width == 500 && assets.pic_title().height == 375);
+    assert(assets.pic_data().width == 510 && assets.pic_data().height == 240);
+    assert(assets.pic_mjdata().width == 360 && assets.pic_mjdata().height == 612);
+    assert(assets.form_explain().width == 640 && assets.form_explain().height == 376);
+    assert(assets.form_author().width == 370 && assets.form_author().height == 310);
+    for (int i = 0; i < 7; ++i) {
+        assert(assets.pic_level(i).width == 600 && assets.pic_level(i).height == 450);
+    }
+
+    // 1. Verify BoardRenderer title screen & active game board rendering
+    GameState gs;
+    BoardRenderer renderer(assets);
+    renderer.render(gs);
+    assert(renderer.canvas().width == 768 && renderer.canvas().height == 550);
+
+    // Title screen should have non-black pixels inside the centered 500x375 title area
+    size_t non_black_title = 0;
+    for (size_t i = 0; i < renderer.canvas().pixels.size(); i += 4) {
+        if (renderer.canvas().pixels[i] != 0 || renderer.canvas().pixels[i + 1] != 0 || renderer.canvas().pixels[i + 2] != 0) {
+            ++non_black_title;
+        }
+    }
+    assert(non_black_title > 50000);
+
+    // Start new game and render active board + hover + pair selection
+    gs.start_new_game(1000);
+    gs.on_mouse_move(21.0f + 2 * 40 + 10, 6.0f + 2 * 50 + 10);
+    renderer.render(gs);
+
+    // Use Board::hint_x1..y2 (cached by start_new_game -> has_valid_move) to click a guaranteed linkable pair
+    int c1 = static_cast<int>(std::lround(gs.board().hint_x1()));
+    int r1 = static_cast<int>(std::lround(gs.board().hint_y1()));
+    int c2 = static_cast<int>(std::lround(gs.board().hint_x2()));
+    int r2 = static_cast<int>(std::lround(gs.board().hint_y2()));
+
+    gs.on_mouse_down(1, 21.0f + c1 * 40 + 10, 6.0f + r1 * 50 + 10, 1010);
+    gs.on_mouse_down(1, 21.0f + c2 * 40 + 10, 6.0f + r2 * 50 + 10, 1020);
+    gs.tick(1030);
+    assert(gs.animating_link());
+    renderer.render(gs);
+
+    // Check center of (c1, r1) has the inner yellow core (255, 255, 0) of the 3-pass lightning beam
+    int cx = c1 * 40 + 21 + 20;
+    int cy = r1 * 50 + 6 + 25;
+    size_t c_idx = (static_cast<size_t>(cy) * 768 + cx) * 4;
+    assert(renderer.canvas().pixels[c_idx + 0] == 255);
+    assert(renderer.canvas().pixels[c_idx + 1] == 255);
+    assert(renderer.canvas().pixels[c_idx + 2] == 0);
+
+    // Test nearest & bilinear scaling
+    RgbaSurface scaled_2x;
+    renderer.scale_to(1536, 1100, ScaleFilter::Nearest, scaled_2x);
+    assert(scaled_2x.width == 1536 && scaled_2x.height == 1100);
+
+    RgbaSurface scaled_bilinear;
+    renderer.scale_to(1152, 825, ScaleFilter::Bilinear, scaled_bilinear);
+    assert(scaled_bilinear.width == 1152 && scaled_bilinear.height == 825);
+
+    // 2. Verify AudioEngine (WAV SFX + Embedded SoundFont MIDI + Native OS MIDI + Track Rotation)
+    setenv("SDL_AUDIODRIVER", "dummy", 1);
+
+    Config cfg;
+    cfg.midi_backend = MidiBackend::EmbeddedSoundFont;
+    AudioEngine audio;
+    assert(audio.init(assets, cfg, &err));
+    assert(audio.is_initialized());
+    assert(audio.current_midi_track() == 0); // 101.mid started automatically!
+
+    // Mix 4096 frames of embedded MIDI + SFX 203.wav
+    audio.play_sfx(203);
+    std::vector<float> pcm(4096 * 2, 0.0f);
+    audio.mix_audio_frames(pcm.data(), 4096);
+    float max_amp = 0.0f;
+    for (float s : pcm) {
+        max_amp = std::max(max_amp, std::fabs(s));
+    }
+    assert(max_amp > 0.001f);
+
+    // Untick track 0 (101.mid) -> update() must immediately advance to track 1 (102.mid)
+    cfg.set_track_enabled(101, false);
+    audio.update(cfg);
+    assert(audio.current_midi_track() == 1);
+
+    // Switch live to NativeOS MIDI backend (and back to EmbeddedSoundFont)
+    cfg.midi_backend = MidiBackend::NativeOS;
+    audio.update(cfg);
+    assert(audio.current_midi_track() == 1);
+
+    cfg.midi_backend = MidiBackend::EmbeddedSoundFont;
+    audio.update(cfg);
+    assert(audio.current_midi_track() == 1);
+
+    // Disable BGM -> stops playback immediately
+    cfg.music_on = false;
+    audio.update(cfg);
+    assert(audio.current_midi_track() == -1);
+    assert(!audio.is_midi_playing());
+
+    audio.shutdown();
+}
+
+int main() {
+    int vpx = 0, vpy = 0, vpw = 0, vph = 0;
+    BoardRenderer::compute_aspect_viewport(1920, 1080, vpx, vpy, vpw, vph);
+    assert(vph == 1080);
+    assert(vpw == 1080 * 768 / 550);
+    assert(vpx == (1920 - vpw) / 2 && vpy == 0);
+
+    bool created_temp = false;
+    auto assets_dir = ensure_test_assets(created_temp);
+    assert(!assets_dir.empty() && "Failed to locate or extract test assets");
+
+    test_renderer_and_audio_with_assets(assets_dir);
+
+    if (created_temp) {
+        std::filesystem::remove_all(assets_dir);
+    }
+    std::printf("[PASS] test_media\n");
+    return 0;
+}
