@@ -60,5 +60,5 @@
   "msg.timeout.title": "残局",
   "msg.timeout.body": "时间能量用尽，游戏结束。\n剩余生命能量可以获得 {bonus} 分\n累计总得分为 {score} 分",
   "msg.missing_assets.title": "缺少游戏素材",
-  "msg.missing_assets.body": "找不到游戏素材文件夹 (assets/)。\n请先运行以下命令从原版主程序提取素材：\npython3 tools/extract_assets.py lianliankan2.ExE --bmp"
+  "msg.missing_assets.body": "找不到游戏素材文件夹 (assets/)。\n请先运行以下命令从原版主程序提取素材：\npython3 tools/extract_assets.py lianliankan2.ExE"
 }

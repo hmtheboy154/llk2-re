@@ -9,7 +9,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(LLK2_SDL_VERSION "AUTO" CACHE STRING "SDL version to use: AUTO, 3, or 2")
 set_property(CACHE LLK2_SDL_VERSION PROPERTY STRINGS "AUTO" "3" "2")
 
-option(LLK2_UI_QT          "Build Qt 6 native desktop executable (llk2-qt)"      OFF)
+option(LLK2_UI_QT          "Build Qt 6 native desktop executable (llk2-qt)"      ON)
 option(LLK2_UI_IMGUI       "Build Dear ImGui executable (llk2-imgui)"            OFF)
 option(LLK2_UI_BUI         "Build BUI zero-dependency executable (llk2-bui)"     OFF)
 option(LLK2_BUILD_TESTS    "Build CTest unit test suite"                         ON)
@@ -98,6 +98,35 @@ elseif(WIN32)
     target_link_libraries(llk2_media PUBLIC winmm)
 endif()
 
+# ── Phase 3: Qt 6 Native Desktop Frontend (llk2-qt) ──────────────────────────
+if(LLK2_UI_QT)
+    find_package(Qt6 COMPONENTS Core Gui Widgets REQUIRED)
+
+    add_executable(llk2-qt
+        cpp/ui/qt/main_qt.cpp
+        cpp/ui/qt/main_window.cpp
+        cpp/ui/qt/table_dialog.cpp
+        cpp/ui/qt/image_dialogs.cpp
+    )
+
+    target_include_directories(llk2-qt PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/cpp
+    )
+
+    target_link_libraries(llk2-qt PRIVATE
+        llk2_media
+        Qt6::Core
+        Qt6::Gui
+        Qt6::Widgets
+    )
+
+    if(MSVC)
+        target_compile_options(llk2-qt PRIVATE /W4 /utf-8)
+    else()
+        target_compile_options(llk2-qt PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+endif()
+
 # ── Unit Tests (CTest) ───────────────────────────────────────────────────────
 if(LLK2_BUILD_TESTS)
     enable_testing()
@@ -120,4 +149,13 @@ if(LLK2_BUILD_TESTS)
         LLK2_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
     )
     add_test(NAME test_media COMMAND test_media)
+
+    if(LLK2_UI_QT)
+        add_executable(test_qt_ui tests/test_qt_ui.cpp)
+        target_compile_definitions(test_qt_ui PRIVATE
+            LLK2_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+            LLK2_QT_BINARY="$<TARGET_FILE:llk2-qt>"
+        )
+        add_test(NAME test_qt_ui COMMAND test_qt_ui)
+    endif()
 endif()

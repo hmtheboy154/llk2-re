@@ -60,5 +60,5 @@
   "msg.timeout.title": "殘局",
   "msg.timeout.body": "時間能量用盡，遊戲結束。\n剩餘生命能量可以獲得 {bonus} 分\n累計總得分為 {score} 分",
   "msg.missing_assets.title": "缺少遊戲素材",
-  "msg.missing_assets.body": "找不到遊戲素材資料夾 (assets/)。\n請先執行以下指令從原版主程式提取素材：\npython3 tools/extract_assets.py D4s.exe --bmp"
+  "msg.missing_assets.body": "找不到遊戲素材資料夾 (assets/)。\n請先執行以下指令從原版主程式提取素材：\npython3 tools/extract_assets.py D4s.exe"
 }

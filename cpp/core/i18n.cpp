@@ -62,7 +62,7 @@ void I18n::init_builtin_catalogs() {
     tw["msg.timeout.title"] = "殘局";
     tw["msg.timeout.body"] = "時間能量用盡，遊戲結束。\n剩餘生命能量可以獲得 {bonus} 分\n累計總得分為 {score} 分";
     tw["msg.missing_assets.title"] = "缺少遊戲素材";
-    tw["msg.missing_assets.body"] = "找不到遊戲素材資料夾 (assets/)。\n請先執行以下指令從原版主程式提取素材：\npython3 tools/extract_assets.py D4s.exe --bmp";
+    tw["msg.missing_assets.body"] = "找不到遊戲素材資料夾 (assets/)。\n請先執行以下指令從原版主程式提取素材：\npython3 tools/extract_assets.py D4s.exe";
 
     auto& cn = catalogs_["zh-CN"];
     cn["app.title"] = "连连看2";
@@ -116,7 +116,7 @@ void I18n::init_builtin_catalogs() {
     cn["msg.timeout.title"] = "残局";
     cn["msg.timeout.body"] = "时间能量用尽，游戏结束。\n剩余生命能量可以获得 {bonus} 分\n累计总得分为 {score} 分";
     cn["msg.missing_assets.title"] = "缺少游戏素材";
-    cn["msg.missing_assets.body"] = "找不到游戏素材文件夹 (assets/)。\n请先运行以下命令从原版主程序提取素材：\npython3 tools/extract_assets.py lianliankan2.ExE --bmp";
+    cn["msg.missing_assets.body"] = "找不到游戏素材文件夹 (assets/)。\n请先运行以下命令从原版主程序提取素材：\npython3 tools/extract_assets.py lianliankan2.ExE";
 }
 
 static bool parse_flat_json_object(const std::string& content, std::unordered_map<std::string, std::string>& out) {
