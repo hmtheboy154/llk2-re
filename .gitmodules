@@ -10,3 +10,9 @@
 [submodule "subprojects/GeneralUser-GS"]
 	path = subprojects/GeneralUser-GS
 	url = https://github.com/mrbumpy409/GeneralUser-GS.git
+[submodule "subprojects/imgui"]
+	path = subprojects/imgui
+	url = https://github.com/ocornut/imgui.git
+[submodule "subprojects/BUI"]
+	path = subprojects/BUI
+	url = https://github.com/ppmpreetham/BUI.git

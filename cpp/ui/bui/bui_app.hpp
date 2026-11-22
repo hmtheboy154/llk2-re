@@ -1,0 +1,198 @@
+#pragma once
+
+#include "core/config.hpp"
+#include "core/game_state.hpp"
+#include "core/hst_score.hpp"
+#include "core/i18n.hpp"
+#include "media/asset_manager.hpp"
+#include "media/audio_engine.hpp"
+#include "media/board_renderer.hpp"
+
+#include "BUI_kit.h"
+
+#include <cstdint>
+#include <deque>
+#include <filesystem>
+#include <string>
+#include <vector>
+
+namespace llk2::ui::bui {
+
+class BuiApp {
+public:
+    BuiApp(media::AssetManager& assets,
+           media::AudioEngine& audio,
+           core::Config& config,
+           core::I18n& i18n,
+           core::HighScoreTable& scores,
+           const std::filesystem::path& work_dir);
+    ~BuiApp();
+
+    BuiApp(const BuiApp&) = delete;
+    BuiApp& operator=(const BuiApp&) = delete;
+
+    bool init(bool headless_mode, std::string* err_out = nullptr);
+    void shutdown();
+
+    // Runs BUI's native event loop until the window closes.
+    int run();
+
+    // Headless render step into an offscreen BuiRaster (works with zero display server).
+    bool render_headless_frame(const std::filesystem::path& screenshot_png = {});
+
+    // Simulates a left-button click inside the main context (for smoke-test regression coverage).
+    void simulate_click(int x, int y);
+
+    // Programmatic actions (shared by menus and smoke test)
+    void trigger_new_game();
+    void trigger_give_up();
+    void set_language(const std::string& lang_code);
+    void set_scale_mode(core::WindowScaleMode mode);
+    void set_scale_filter(core::ScaleFilter filter);
+    void set_midi_backend(core::MidiBackend backend);
+    void set_midi_track_enabled(int track_id, bool enabled);
+    void set_blender_theme(const std::string& theme_name);
+
+    void open_records_modal(int editable_rank = -1);
+    void open_explain_modal();
+    void open_author_modal();
+    void close_active_modal();
+    void flush_deferred_actions();
+
+    core::GameState& game_state() noexcept { return game_state_; }
+    const core::GameState& game_state() const noexcept { return game_state_; }
+    std::string current_title() const { return current_title_; }
+    std::string current_theme() const { return current_theme_; }
+    bool is_modal_open() const noexcept { return active_modal_ != ModalKind::None; }
+
+private:
+    enum class MenuAction : uintptr_t {
+        None = 0,
+        NewGame,
+        GiveUp,
+        Records,
+        Exit,
+        ToggleMusic,
+        ToggleSound,
+        LangZhTW,
+        LangZhCN,
+        Track101,
+        Track102,
+        Track103,
+        BackendOst,
+        BackendNative,
+        BackendEmbedded,
+        SelectSoundFont,
+        Scale1x,
+        Scale1_5x,
+        Scale2x,
+        Scale3x,
+        ScaleFree,
+        FilterNearest,
+        FilterBilinear,
+        ThemeDark,
+        ThemeLight,
+        ImportHst,
+        ExportHst,
+        ShowExplain,
+        ShowAuthor
+    };
+
+    enum class ModalKind {
+        None,
+        GameEvent,
+        Records,
+        ExplainImage,
+        AuthorImage
+    };
+
+    enum class DeferredAction {
+        CloseModal,
+        AcceptGameModal,
+        AcceptRecordsModal,
+        OpenExplain,
+        OpenAuthor,
+        OpenRecords
+    };
+
+    void setup_cjk_font();
+    void apply_cjk_font();
+    void build_ui_tree();
+    void rebuild_menus();
+    void update_window_title();
+    void apply_window_scale();
+    void upload_board_texture();
+    void save_config_and_scores();
+
+    void queue_deferred(DeferredAction action);
+
+    void tick_game();
+    void process_game_events();
+    void show_next_game_modal();
+
+    void clear_modal_content();
+    void show_game_event_modal(const core::GameEvent& ev);
+    void accept_game_event_modal();
+    void accept_records_modal();
+
+    void on_import_hst();
+    void on_export_hst();
+    void on_select_soundfont();
+
+    bool map_board_local_to_logical(float bx, float by, float& out_lx, float& out_ly) const;
+
+    // Static C callbacks bridged into BUI
+    static void on_host_emit(void* data, BKNode* node, int kind, void* ref, double a, double b);
+    static int on_board_event(void* data, BKNode* node, const BKCustomEvent* e);
+    static void on_board_draw(void* data, BKNode* node, BuiRaster* r, const int rect[4]);
+    static void on_window_frame(void* data, BKWindow* win);
+    static void on_window_timer(void* data, BKWindow* win, int id);
+    static int on_window_close(void* data, BKWindow* win);
+
+    media::AssetManager& assets_;
+    media::AudioEngine& audio_;
+    core::Config& config_;
+    core::I18n& i18n_;
+    core::HighScoreTable& scores_;
+    std::filesystem::path work_dir_;
+
+    core::GameState game_state_;
+    media::BoardRenderer renderer_;
+
+    bool initialized_ = false;
+    bool headless_mode_ = false;
+    bool cjk_font_loaded_ = false;
+    std::string current_theme_ = "dark";
+    std::string current_title_;
+
+    // Main window UI tree
+    BKNode* root_ = nullptr;
+    BKNode* menubar_ = nullptr;
+    BKNode* mb_game_ = nullptr;
+    BKNode* mb_audio_ = nullptr;
+    BKNode* mb_settings_ = nullptr;
+    BKNode* mb_about_ = nullptr;
+    BKNode* board_node_ = nullptr;
+    BKNode* modal_backdrop_ = nullptr;
+    BKNode* modal_dialog_ = nullptr;
+    BKNode* modal_ok_btn_ = nullptr;
+    BKNode* modal_name_edit_ = nullptr;
+    BKNode* modal_rank_name_lbl_ = nullptr;
+    BKNode* modal_image_node_ = nullptr;
+
+    BKContext* ctx_ = nullptr;
+    BKWindow* window_ = nullptr;
+    BuiRaster* headless_raster_ = nullptr;
+
+    int board_tex_ = 0;
+    bool board_dirty_ = true;
+    int tick_timer_id_ = 0;
+
+    ModalKind active_modal_ = ModalKind::None;
+    std::deque<core::GameEvent> pending_game_modals_;
+    std::vector<DeferredAction> deferred_actions_;
+    bool ack_game_after_records_ = false;
+    int records_editable_rank_ = -1;
+};
+
+} // namespace llk2::ui::bui

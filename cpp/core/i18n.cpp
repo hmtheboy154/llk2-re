@@ -54,6 +54,7 @@ void I18n::init_builtin_catalogs() {
     tw["table.col.score"] = "積分";
     tw["table.prompt.name"] = "玩家姓名";
     tw["table.btn.ok"] = "確定";
+    tw["dialog.btn.close"] = "關閉";
     tw["table.default_player"] = "Player";
     tw["msg.stage_clear.title"] = "成功";
     tw["msg.stage_clear.body"] = "過關成功，請進入第 {level} 關。\n剩餘時間能量可以獲得 {bonus} 分";
@@ -110,6 +111,7 @@ void I18n::init_builtin_catalogs() {
     cn["table.col.score"] = "积分";
     cn["table.prompt.name"] = "玩家姓名";
     cn["table.btn.ok"] = "确定";
+    cn["dialog.btn.close"] = "关闭";
     cn["table.default_player"] = "Player";
     cn["msg.stage_clear.title"] = "成功";
     cn["msg.stage_clear.body"] = "过关成功，请进入第 {level} 关。\n剩余时间能量可以获得 {bonus} 分";
