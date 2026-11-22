@@ -142,8 +142,6 @@ bool ImGuiApp::init(bool headless_mode, std::string* err_out) {
     }
 #endif
 
-    setup_window_icon();
-
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
@@ -285,35 +283,6 @@ void ImGuiApp::setup_fonts() {
     }
 
     io.Fonts->AddFontDefault();
-}
-
-void ImGuiApp::setup_window_icon() {
-    if (!window_) return;
-    const auto& tiles = assets_.pic_mjdata();
-    if (!tiles.valid() || tiles.width < 40 || tiles.height < 50) return;
-
-    // Extract tile 0 (40x40 centered crop) as crisp cross-platform window icon
-    static std::vector<uint8_t> icon_px(40 * 40 * 4, 0);
-    for (int y = 0; y < 40; ++y) {
-        int sy = y + 5;
-        const uint8_t* src = tiles.pixels.data() + (static_cast<size_t>(sy) * tiles.width) * 4;
-        uint8_t* dst = icon_px.data() + (static_cast<size_t>(y) * 40) * 4;
-        std::memcpy(dst, src, 40 * 4);
-    }
-
-#if defined(LLK2_USE_SDL3)
-    SDL_Surface* surf = SDL_CreateSurfaceFrom(40, 40, SDL_PIXELFORMAT_RGBA32, icon_px.data(), 40 * 4);
-#else
-    SDL_Surface* surf = SDL_CreateRGBSurfaceWithFormatFrom(icon_px.data(), 40, 40, 32, 40 * 4, SDL_PIXELFORMAT_RGBA32);
-#endif
-    if (surf) {
-        SDL_SetWindowIcon(window_, surf);
-#if defined(LLK2_USE_SDL3)
-        SDL_DestroySurface(surf);
-#else
-        SDL_FreeSurface(surf);
-#endif
-    }
 }
 
 bool ImGuiApp::create_textures(std::string* err_out) {

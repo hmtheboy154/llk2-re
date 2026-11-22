@@ -42,16 +42,35 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 endif()
 
 # ── Phase 1: libllk2_core (Pure C++20 game logic, i18n, config, high scores) ─
+# Single-source-of-truth localization: embed locales/*.json into generated builtin_locales.hpp
+file(GLOB LLK2_LOCALE_JSON_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/locales/*.json")
+set(LLK2_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+set(LLK2_BUILTIN_LOCALES_HEADER "${LLK2_GENERATED_DIR}/builtin_locales.hpp")
+
+add_custom_command(
+    OUTPUT "${LLK2_BUILTIN_LOCALES_HEADER}"
+    COMMAND ${CMAKE_COMMAND}
+        -DLOCALES_DIR=${CMAKE_CURRENT_SOURCE_DIR}/locales
+        -DOUTPUT_HEADER=${LLK2_BUILTIN_LOCALES_HEADER}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gen_builtin_locales.cmake
+    DEPENDS ${LLK2_LOCALE_JSON_FILES} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gen_builtin_locales.cmake
+    COMMENT "Embedding locales/*.json into generated/builtin_locales.hpp"
+)
+
 add_library(llk2_core STATIC
     cpp/core/board.cpp
     cpp/core/hst_score.cpp
     cpp/core/config.cpp
     cpp/core/i18n.cpp
     cpp/core/game_state.cpp
+    "${LLK2_BUILTIN_LOCALES_HEADER}"
 )
 
 target_include_directories(llk2_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/cpp
+)
+target_include_directories(llk2_core PRIVATE
+    "${LLK2_GENERATED_DIR}"
 )
 
 if(MSVC)

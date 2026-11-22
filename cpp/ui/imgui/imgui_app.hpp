@@ -74,7 +74,6 @@ private:
 
     void setup_fonts();
     void setup_style();
-    void setup_window_icon();
     bool create_textures(std::string* err_out);
     void destroy_textures();
     void ensure_explain_texture_for_lang();
