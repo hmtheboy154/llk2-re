@@ -15,6 +15,8 @@ int main(int argc, char* argv[]) {
     std::filesystem::path work_dir = std::filesystem::current_path();
     std::filesystem::path custom_assets_dir;
     std::filesystem::path screenshot_path;
+    std::filesystem::path explain_screenshot_path;
+    std::string forced_lang;
     bool smoke_test = false;
 
     for (int i = 1; i < argc; ++i) {
@@ -25,12 +27,19 @@ int main(int argc, char* argv[]) {
             smoke_test = true;
         } else if (arg == "--screenshot" && i + 1 < argc) {
             screenshot_path = argv[++i];
+        } else if (arg == "--explain-screenshot" && i + 1 < argc) {
+            explain_screenshot_path = argv[++i];
+        } else if (arg == "--lang" && i + 1 < argc) {
+            forced_lang = argv[++i];
         }
     }
 
     llk2::core::Config config;
     config.load(work_dir / "config.json");
 
+    if (!forced_lang.empty()) {
+        config.language = forced_lang;
+    }
     llk2::core::I18n i18n;
     if (std::filesystem::exists(work_dir / "locales")) {
         i18n.load_locales_dir(work_dir / "locales");
@@ -86,17 +95,21 @@ int main(int argc, char* argv[]) {
         }
         app.render_frame();
 
-        // 3. Test live language switching (zh-TW -> zh-CN -> zh-TW)
-        app.set_language("zh-CN");
-        app.render_frame();
-        if (app.window_title() != i18n.tr("app.title") || i18n.language() != "zh-CN") {
-            std::fprintf(stderr, "[FAIL] llk2-imgui smoke_test: zh-CN live switch failed\n");
-            app.shutdown();
-            audio.shutdown();
-            return 3;
+        // 3. Test live language switching (zh-TW -> zh-CN -> en -> vi -> zh-TW)
+        for (const char* lang : {"zh-CN", "en", "vi", "zh-TW"}) {
+            app.set_language(lang);
+            app.render_frame();
+            if (app.window_title() != i18n.tr("app.title") || i18n.language() != lang) {
+                std::fprintf(stderr, "[FAIL] llk2-imgui smoke_test: %s live switch failed\n", lang);
+                app.shutdown();
+                audio.shutdown();
+                return 3;
+            }
         }
-        app.set_language("zh-TW");
-        app.render_frame();
+        if (!forced_lang.empty()) {
+            app.set_language(forced_lang);
+            app.render_frame();
+        }
 
         // 4. Test live scaling & filter presets
         app.set_scale_mode(llk2::core::WindowScaleMode::Scale1_5x);
@@ -129,11 +142,15 @@ int main(int argc, char* argv[]) {
             app.save_screenshot(screenshot_path);
         }
 
-        // 7. Test Records / Explain / Author modals
+        // 7. Test Records / Explain (with localized rules overlay) / Author modals
         app.open_records_modal(-1);
         app.render_frame();
         app.open_explain_modal();
         app.render_frame();
+        app.render_frame();
+        if (!explain_screenshot_path.empty()) {
+            app.save_screenshot(explain_screenshot_path);
+        }
         app.open_author_modal();
         app.render_frame();
 

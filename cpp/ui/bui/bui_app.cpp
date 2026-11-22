@@ -14,8 +14,45 @@ namespace llk2::ui::bui {
 
 namespace {
 
-constexpr const char* kUiFontFamily = "llk2_ui";
+constexpr const char* kCjkFontFamily = "llk2_cjk";
+constexpr const char* kLatinFontFamily = "llk2_latin";
 constexpr float kUiFontPoints = 12.0f;
+
+std::vector<std::string> wrap_text_for_bui(const char* family, int flags, float size,
+                                           std::string_view text, float max_w) {
+    std::vector<std::string> out;
+    auto paragraphs = common::split_lines(text);
+    for (const auto& para : paragraphs) {
+        if (para.empty()) {
+            out.emplace_back();
+            continue;
+        }
+        std::string cur;
+        size_t pos = 0;
+        while (pos < para.size()) {
+            while (pos < para.size() && para[pos] == ' ') ++pos;
+            if (pos >= para.size()) break;
+            size_t end = para.find(' ', pos);
+            if (end == std::string::npos) end = para.size();
+            std::string word = para.substr(pos, end - pos);
+            pos = end;
+
+            std::string cand = cur.empty() ? word : (cur + " " + word);
+            float w = 0.0f;
+            BUI_text_measure(family, flags, size, cand.c_str(), static_cast<int>(cand.size()), &w);
+            if (!cur.empty() && w > max_w) {
+                out.push_back(cur);
+                cur = word;
+            } else {
+                cur = std::move(cand);
+            }
+        }
+        if (!cur.empty()) {
+            out.push_back(cur);
+        }
+    }
+    return out;
+}
 
 std::string tr_clean(const core::I18n& i18n, std::string_view key) {
     return common::strip_mnemonic(i18n.tr(key));
@@ -96,32 +133,87 @@ BuiApp::~BuiApp() {
     shutdown();
 }
 
-void BuiApp::setup_cjk_font() {
-    auto reg = common::find_system_cjk_font(false, config_.language, /*require_index_zero=*/true);
-    if (reg.valid()) {
-        auto bytes = common::read_file_bytes(reg.path);
+void BuiApp::setup_ui_fonts() {
+    auto reg_cjk = common::find_system_cjk_font(false, config_.language, /*require_index_zero=*/true);
+    if (reg_cjk.valid()) {
+        auto bytes = common::read_file_bytes(reg_cjk.path);
         if (!bytes.empty() &&
-            BUI_text_add_font(kUiFontFamily, 0, bytes.data(), static_cast<int>(bytes.size()))) {
+            BUI_text_add_font(kCjkFontFamily, 0, bytes.data(), static_cast<int>(bytes.size()))) {
             cjk_font_loaded_ = true;
         }
     }
-
-    auto bold = common::find_system_cjk_font(true, config_.language, /*require_index_zero=*/true);
-    if (bold.valid()) {
-        auto bytes = common::read_file_bytes(bold.path);
+    auto bold_cjk = common::find_system_cjk_font(true, config_.language, /*require_index_zero=*/true);
+    if (bold_cjk.valid()) {
+        auto bytes = common::read_file_bytes(bold_cjk.path);
         if (!bytes.empty()) {
-            BUI_text_add_font(kUiFontFamily, BUI_FONT_BOLD, bytes.data(), static_cast<int>(bytes.size()));
+            BUI_text_add_font(kCjkFontFamily, BUI_FONT_BOLD, bytes.data(), static_cast<int>(bytes.size()));
         }
     }
 
-    apply_cjk_font();
+    auto reg_lat = common::find_system_latin_font(false, "vi", /*require_index_zero=*/true);
+    if (reg_lat.valid()) {
+        auto bytes = common::read_file_bytes(reg_lat.path);
+        if (!bytes.empty() &&
+            BUI_text_add_font(kLatinFontFamily, 0, bytes.data(), static_cast<int>(bytes.size()))) {
+            latin_font_loaded_ = true;
+        }
+    }
+    auto bold_lat = common::find_system_latin_font(true, "vi", /*require_index_zero=*/true);
+    if (bold_lat.valid()) {
+        auto bytes = common::read_file_bytes(bold_lat.path);
+        if (!bytes.empty()) {
+            BUI_text_add_font(kLatinFontFamily, BUI_FONT_BOLD, bytes.data(), static_cast<int>(bytes.size()));
+        }
+    }
+
+    apply_ui_font();
 }
 
-void BuiApp::apply_cjk_font() {
+const char* BuiApp::active_font_family() const noexcept {
+    const std::string& lang = i18n_.language();
+    const bool use_latin = (lang == "en" || lang == "vi");
+    if (use_latin && latin_font_loaded_) {
+        return kLatinFontFamily;
+    }
     if (cjk_font_loaded_) {
-        BK_set_font(kUiFontFamily);
+        return kCjkFontFamily;
+    }
+    if (latin_font_loaded_) {
+        return kLatinFontFamily;
+    }
+    return "";
+}
+
+void BuiApp::apply_ui_font() {
+    const char* fam = active_font_family();
+    if (fam && fam[0]) {
+        BK_set_font(fam);
     }
     BK_set_font_size(kUiFontPoints);
+    if (menubar_) BK_node_relayout(menubar_);
+    if (root_) {
+        BK_node_relayout(root_);
+        BK_node_invalidate(root_);
+    }
+    if (insp_root_) {
+        BK_node_relayout(insp_root_);
+        BK_node_invalidate(insp_root_);
+    }
+}
+
+void BuiApp::ensure_explain_texture_for_lang() {
+    const std::string& lang = i18n_.language();
+    if (explain_tex_ != 0 && explain_tex_lang_ == lang) return;
+
+    if (explain_tex_ != 0) {
+        BUI_texture_free(explain_tex_);
+        explain_tex_ = 0;
+    }
+    const auto& surf = assets_.form_explain_for_lang(lang);
+    if (surf.valid()) {
+        explain_tex_ = BUI_texture_create(surf.width, surf.height, surf.pixels.data(), surf.width * 4);
+    }
+    explain_tex_lang_ = lang;
 }
 
 void BuiApp::build_ui_tree() {
@@ -302,7 +394,6 @@ void BuiApp::rebuild_menus() {
     if (!mb_game_ || !mb_audio_ || !mb_settings_ || !mb_about_) return;
 
     const bool on_title = game_state_.in_title_screen();
-    const bool is_cn = (config_.language == "zh-CN");
 
     // 1. 遊戲(G)
     std::string t_game = tr_clean(i18n_, "menu.game");
@@ -337,12 +428,17 @@ void BuiApp::rebuild_menus() {
     // 3. 設定(S)
     std::string t_settings = tr_clean(i18n_, "menu.settings");
     std::string s_lang = tr_clean(i18n_, "menu.settings.language");
-    std::string s_tw = i18n_.tr("lang.zh_TW");
-    std::string s_cn = i18n_.tr("lang.zh_CN");
-    BKMenuSpec lang_sub[] = {
-        make_item(s_tw, static_cast<uintptr_t>(MenuAction::LangZhTW), !is_cn ? 1 : 0),
-        make_item(s_cn, static_cast<uintptr_t>(MenuAction::LangZhCN), is_cn ? 1 : 0),
-    };
+    menu_langs_ = common::ordered_languages(i18n_);
+    const std::string& active_lang = i18n_.language();
+    std::vector<std::string> lang_labels;
+    lang_labels.reserve(menu_langs_.size());
+    std::vector<BKMenuSpec> lang_sub;
+    lang_sub.reserve(menu_langs_.size());
+    for (size_t i = 0; i < menu_langs_.size(); ++i) {
+        lang_labels.push_back(common::language_display_name(i18n_, menu_langs_[i], /*bui_single_font_safe=*/true));
+        uintptr_t tag = static_cast<uintptr_t>(MenuAction::LangBase) + static_cast<uintptr_t>(i);
+        lang_sub.push_back(make_item(lang_labels.back(), tag, active_lang == menu_langs_[i] ? 1 : 0));
+    }
 
     std::string s_tracks = tr_clean(i18n_, "menu.settings.midi_tracks");
     std::string s_t101 = i18n_.tr("menu.settings.track_101");
@@ -391,9 +487,9 @@ void BuiApp::rebuild_menus() {
         make_item(s_lin, static_cast<uintptr_t>(MenuAction::FilterBilinear), config_.scale_filter == core::ScaleFilter::Bilinear ? 1 : 0),
     };
 
-    std::string s_theme = is_cn ? "界面主题 (Blender)" : "介面主題 (Blender)";
-    std::string s_dark = is_cn ? "Blender 深色 (Dark)" : "Blender 深色 (Dark)";
-    std::string s_light = is_cn ? "Blender 浅色 (Light)" : "Blender 淺色 (Light)";
+    std::string s_theme = i18n_.tr("menu.settings.theme");
+    std::string s_dark = i18n_.tr("menu.settings.theme_dark");
+    std::string s_light = i18n_.tr("menu.settings.theme_light");
     BKMenuSpec theme_sub[] = {
         make_item(s_dark, static_cast<uintptr_t>(MenuAction::ThemeDark), current_theme_ != "light" ? 1 : 0),
         make_item(s_light, static_cast<uintptr_t>(MenuAction::ThemeLight), current_theme_ == "light" ? 1 : 0),
@@ -405,7 +501,7 @@ void BuiApp::rebuild_menus() {
 
     BK_set_str(mb_settings_, "text", t_settings.c_str());
     BKMenuSpec settings_items[] = {
-        make_submenu(s_lang, lang_sub, 2),
+        make_submenu(s_lang, lang_sub.data(), static_cast<int>(lang_sub.size())),
         make_sep(),
         make_submenu(s_tracks, tracks_sub, 3),
         make_submenu(s_device, device_sub, 5),
@@ -491,7 +587,7 @@ bool BuiApp::init(bool headless_mode, std::string* err_out) {
     headless_mode_ = headless_mode;
 
     BK_set_theme(current_theme_.c_str());
-    setup_cjk_font();
+    setup_ui_fonts();
     build_ui_tree();
     build_inspector_tree();
     update_window_title();
@@ -563,6 +659,10 @@ void BuiApp::shutdown() {
     if (board_tex_ != 0) {
         BUI_texture_free(board_tex_);
         board_tex_ = 0;
+    }
+    if (explain_tex_ != 0) {
+        BUI_texture_free(explain_tex_);
+        explain_tex_ = 0;
     }
     if (insp_ctx_) {
         BK_context_free(insp_ctx_);
@@ -663,8 +763,12 @@ void BuiApp::trigger_give_up() {
 }
 
 void BuiApp::set_language(const std::string& lang_code) {
-    if (i18n_.set_language(lang_code)) {
-        config_.language = lang_code;
+    // Copy by value up front: i18n_.set_language() triggers change listeners -> rebuild_menus(),
+    // which reassigns menu_langs_ and would otherwise invalidate a reference into menu_langs_!
+    std::string target = lang_code;
+    if (i18n_.set_language(target)) {
+        config_.language = target;
+        apply_ui_font();
         rebuild_menus();
         refresh_inspector_ui(true);
         save_config_and_scores();
@@ -706,17 +810,9 @@ void BuiApp::set_midi_track_enabled(int track_id, bool enabled) {
 void BuiApp::set_blender_theme(const std::string& theme_name) {
     if (BK_set_theme(theme_name.c_str())) {
         current_theme_ = BK_theme_name();
-        // BK_set_theme resets the font family to Inter; restore our CJK UI font immediately.
-        apply_cjk_font();
+        // BK_set_theme resets the font family to Inter; restore our active CJK/Latin UI font immediately.
+        apply_ui_font();
         rebuild_menus();
-        if (root_) {
-            BK_node_relayout(root_);
-            BK_node_invalidate(root_);
-        }
-        if (insp_root_) {
-            BK_node_relayout(insp_root_);
-            BK_node_invalidate(insp_root_);
-        }
     }
 }
 
@@ -1071,17 +1167,22 @@ void BuiApp::accept_records_modal() {
 
 void BuiApp::open_explain_modal() {
     clear_modal_content();
-    const auto& surf = assets_.form_explain();
+    const auto& surf = assets_.form_explain_for_lang(i18n_.language());
     if (!surf.valid()) return;
+    ensure_explain_texture_for_lang();
 
     modal_dialog_ = BK_node_new("frame");
     BK_set_str(modal_dialog_, "title", i18n_.tr("dialog.explain.title").c_str());
     BK_set_num(modal_dialog_, "padding", 8);
     BK_set_num(modal_dialog_, "events", 1);
 
-    modal_image_node_ = BK_node_new("label");
-    BK_node_set_image(modal_image_node_, surf.pixels.data(), surf.width, surf.height);
-    BK_set_num(modal_image_node_, "events", 1);
+    modal_image_node_ = BK_node_new("custom");
+    BKCustomClass cls{};
+    cls.event = &BuiApp::on_explain_event;
+    cls.draw = &BuiApp::on_explain_draw;
+    cls.natural_w = surf.width;
+    cls.natural_h = surf.height;
+    BK_custom_set(modal_image_node_, &cls, this);
     BK_node_add(modal_dialog_, modal_image_node_, -1);
     BK_geom_set_manager(modal_image_node_, BK_GEOM_PACK);
     BK_geom_set(modal_image_node_, "side", 0);
@@ -1294,7 +1395,16 @@ void BuiApp::on_host_emit(void* data, BKNode* node, int kind, void* ref, double 
     if (!self) return;
 
     if (kind == BK_EV_CALL) {
-        auto act = static_cast<MenuAction>(reinterpret_cast<uintptr_t>(ref));
+        uintptr_t raw_tag = reinterpret_cast<uintptr_t>(ref);
+        if (raw_tag >= static_cast<uintptr_t>(MenuAction::LangBase)) {
+            size_t idx = static_cast<size_t>(raw_tag - static_cast<uintptr_t>(MenuAction::LangBase));
+            if (idx < self->menu_langs_.size()) {
+                std::string chosen_lang = self->menu_langs_[idx];
+                self->set_language(chosen_lang);
+            }
+            return;
+        }
+        auto act = static_cast<MenuAction>(raw_tag);
         switch (act) {
             case MenuAction::NewGame:
                 if (self->game_state_.in_title_screen() && self->active_modal_ == ModalKind::None) {
@@ -1325,12 +1435,6 @@ void BuiApp::on_host_emit(void* data, BKNode* node, int kind, void* ref, double 
                 self->audio_.update(self->config_);
                 self->rebuild_menus();
                 self->save_config_and_scores();
-                break;
-            case MenuAction::LangZhTW:
-                self->set_language("zh-TW");
-                break;
-            case MenuAction::LangZhCN:
-                self->set_language("zh-CN");
                 break;
             case MenuAction::Track101:
                 self->set_midi_track_enabled(101, !self->config_.is_track_enabled(101));
@@ -1395,6 +1499,7 @@ void BuiApp::on_host_emit(void* data, BKNode* node, int kind, void* ref, double 
             case MenuAction::ShowAuthor:
                 self->queue_deferred(DeferredAction::OpenAuthor);
                 break;
+            case MenuAction::LangBase:
             case MenuAction::None:
                 break;
         }
@@ -1608,6 +1713,120 @@ void BuiApp::on_board_draw(void* data, BKNode* /*node*/, BuiRaster* r, const int
     }
 }
 
+int BuiApp::on_explain_event(void* data, BKNode* /*node*/, const BKCustomEvent* e) {
+    auto* self = static_cast<BuiApp*>(data);
+    if (!self || !e) return 0;
+    if (e->type == BK_CUSTOM_PRESS) {
+        self->queue_deferred(DeferredAction::CloseModal);
+        return 1;
+    }
+    return 0;
+}
+
+void BuiApp::on_explain_draw(void* data, BKNode* /*node*/, BuiRaster* r, const int rect[4]) {
+    auto* self = static_cast<BuiApp*>(data);
+    if (!self || !r || rect[2] <= 0 || rect[3] <= 0) return;
+
+    const float rx = static_cast<float>(rect[0]);
+    const float ry = static_cast<float>(rect[1]);
+    const float rw = static_cast<float>(rect[2]);
+    const float rh = static_cast<float>(rect[3]);
+
+    const float black[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+    BUI_raster_fill_rect(r, rx, ry, rw, rh, black);
+
+    if (self->explain_tex_ != 0) {
+        const BuiMeshVertex vtx[4] = {
+            {rx,      ry,      0.0f, 0.0f, 0xFFFFFFFFu},
+            {rx + rw, ry,      1.0f, 0.0f, 0xFFFFFFFFu},
+            {rx + rw, ry + rh, 1.0f, 1.0f, 0xFFFFFFFFu},
+            {rx,      ry + rh, 0.0f, 1.0f, 0xFFFFFFFFu},
+        };
+        const uint16_t idx[6] = {0, 1, 2, 0, 2, 3};
+        BUI_raster_mesh(r, vtx, 4, idx, 6, 0, self->explain_tex_, nullptr, 0.0f, 0.0f);
+    }
+
+    auto ov = common::build_explain_overlay(self->assets_, self->i18n_);
+    if (!ov.enabled) return;
+
+    const float sx = rw / static_cast<float>(common::ExplainOverlayLayout::kImageW);
+    const float sy = rh / static_cast<float>(common::ExplainOverlayLayout::kImageH);
+    const char* fam = self->active_font_family();
+
+    const auto& ex_surf = self->assets_.form_explain_for_lang(self->i18n_.language());
+    float mask_bg[4] = {2.0f / 255.0f, 2.0f / 255.0f, 2.0f / 255.0f, 1.0f};
+    if (ex_surf.valid() && ex_surf.width > 10 && ex_surf.height > 10) {
+        size_t idx = (static_cast<size_t>(10) * ex_surf.width + 10) * 4;
+        mask_bg[0] = static_cast<float>(ex_surf.pixels[idx + 0]) / 255.0f;
+        mask_bg[1] = static_cast<float>(ex_surf.pixels[idx + 1]) / 255.0f;
+        mask_bg[2] = static_cast<float>(ex_surf.pixels[idx + 2]) / 255.0f;
+    }
+
+    auto fill_mask = [&](const common::ExplainRect& m) {
+        BUI_raster_fill_rect(r, rx + m.x * sx, ry + m.y * sy, m.w * sx, m.h * sy, mask_bg);
+    };
+    fill_mask(common::ExplainOverlayLayout::kMaskTurn0);
+    fill_mask(common::ExplainOverlayLayout::kMaskTurn1);
+    fill_mask(common::ExplainOverlayLayout::kMaskTurn2Top);
+    fill_mask(common::ExplainOverlayLayout::kMaskTurn2Bot);
+    fill_mask(common::ExplainOverlayLayout::kMaskRulesBox);
+
+    const float white[4] = {0.96f, 0.96f, 0.96f, 1.0f};
+    const float green[4] = {2.0f / 255.0f, 254.0f / 255.0f, 2.0f / 255.0f, 1.0f};
+    const float yellow[4] = {254.0f / 255.0f, 253.0f / 255.0f, 5.0f / 255.0f, 1.0f};
+
+    // 4 diagram labels centered inside their masked regions
+    const float lbl_sz = std::max(10.0f, 14.0f * sy);
+    BUI_raster_set_font(r, fam, BUI_FONT_BOLD);
+    auto draw_centered = [&](const common::ExplainRect& box, const std::string& text) {
+        auto lines = common::split_lines(text);
+        float line_h = lbl_sz * 1.24f;
+        float total_h = line_h * static_cast<float>(lines.size());
+        float start_y = ry + box.y * sy + (box.h * sy - total_h) * 0.5f + lbl_sz * 0.88f;
+        for (size_t i = 0; i < lines.size(); ++i) {
+            float tw = 0.0f;
+            BUI_text_measure(fam, BUI_FONT_BOLD, lbl_sz, lines[i].c_str(), static_cast<int>(lines[i].size()), &tw);
+            float tx = rx + box.x * sx + (box.w * sx - tw) * 0.5f;
+            float ty = start_y + static_cast<float>(i) * line_h;
+            BUI_raster_text(r, tx, ty, lines[i].c_str(), static_cast<int>(lines[i].size()), lbl_sz, white);
+        }
+    };
+    draw_centered(common::ExplainOverlayLayout::kMaskTurn0, ov.turn_0);
+    draw_centered(common::ExplainOverlayLayout::kMaskTurn1, ov.turn_1);
+    draw_centered(common::ExplainOverlayLayout::kMaskTurn2Top, ov.turn_2);
+    draw_centered(common::ExplainOverlayLayout::kMaskTurn2Bot, ov.turn_2);
+
+    // Rules body word-wrapped inside the iconic red frame in original VB5 bright green
+    const auto& rb = common::ExplainOverlayLayout::kTextRulesBody;
+    const float body_sz = std::max(10.0f, 13.0f * sy);
+    const float body_lh = body_sz * 1.24f;
+    BUI_raster_set_font(r, fam, 0);
+    auto body_lines = wrap_text_for_bui(fam, 0, body_sz, ov.body, rb.w * sx);
+    float by = ry + rb.y * sy + body_sz * 0.92f;
+    float max_by = ry + (rb.y + rb.h) * sy;
+    for (const auto& line : body_lines) {
+        if (by > max_by) break;
+        if (!line.empty()) {
+            BUI_raster_text(r, rx + rb.x * sx, by, line.c_str(), static_cast<int>(line.size()), body_sz, green);
+        }
+        by += body_lh;
+    }
+
+    // Controls legend at the bottom of the red box in original VB5 bright yellow
+    const auto& rc = common::ExplainOverlayLayout::kTextControls;
+    const float ctrl_sz = std::max(10.0f, 13.0f * sy);
+    const float ctrl_lh = ctrl_sz * 1.28f;
+    BUI_raster_set_font(r, fam, BUI_FONT_BOLD);
+    auto ctrl_lines = common::split_lines(ov.controls);
+    float cy = ry + rc.y * sy + ctrl_sz * 0.92f;
+    for (const auto& line : ctrl_lines) {
+        if (!line.empty()) {
+            BUI_raster_text(r, rx + rc.x * sx, cy, line.c_str(), static_cast<int>(line.size()), ctrl_sz, yellow);
+        }
+        cy += ctrl_lh;
+    }
+}
+
 void BuiApp::on_window_frame(void* data, BKWindow* /*win*/) {
     auto* self = static_cast<BuiApp*>(data);
     if (!self) return;
@@ -1652,6 +1871,13 @@ void BuiApp::simulate_click(int x, int y) {
     BK_motion(ctx_, x, y, 0);
     BK_press(ctx_, x, y, 0);
     BK_release(ctx_, x, y, 0);
+    flush_deferred_actions();
+}
+
+void BuiApp::simulate_language_menu_pick(size_t lang_index) {
+    void* tag = reinterpret_cast<void*>(static_cast<uintptr_t>(MenuAction::LangBase) +
+                                        static_cast<uintptr_t>(lang_index));
+    on_host_emit(this, mb_settings_, BK_EV_CALL, tag, 0.0, 0.0);
     flush_deferred_actions();
 }
 

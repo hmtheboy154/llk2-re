@@ -77,6 +77,7 @@ private:
     void setup_window_icon();
     bool create_textures(std::string* err_out);
     void destroy_textures();
+    void ensure_explain_texture_for_lang();
     void upload_board_texture();
     void update_texture_filter();
     void apply_window_scale();
@@ -95,7 +96,8 @@ private:
     void draw_modals();
     void draw_records_modal();
     void draw_image_modal(const char* popup_id, const std::string& title,
-                          SDL_Texture* tex, int tex_w, int tex_h, bool& open_flag);
+                          SDL_Texture* tex, int tex_w, int tex_h, bool& open_flag,
+                          bool apply_explain_overlay = false);
     void draw_game_event_modal();
     void draw_path_fallback_modal();
     void draw_inspector();
@@ -121,6 +123,9 @@ private:
     SDL_Renderer* sdl_renderer_ = nullptr;
     SDL_Texture* board_tex_ = nullptr;
     SDL_Texture* explain_tex_ = nullptr;
+    int explain_tex_w_ = 0;
+    int explain_tex_h_ = 0;
+    std::string explain_tex_lang_;
     SDL_Texture* author_tex_ = nullptr;
     bool initialized_ = false;
     bool headless_mode_ = false;

@@ -250,23 +250,38 @@ void ImGuiApp::setup_fonts() {
     io.Fonts->FontLoaderFlags = ImGuiFreeTypeLoaderFlags_LightHinting;
 #endif
 
-    // Match the user's preferred CJK script first; Source Han / Noto / JhengHei / YaHei
-    // cover both Traditional and Simplified Chinese plus Latin cleanly.
-    auto font_match = common::find_system_cjk_font(false, config_.language, false);
-    if (font_match.valid()) {
+    // Load a full Latin + Vietnamese base font first, then merge a CJK font via MergeMode
+    // so English, Vietnamese (full diacritics), Traditional Chinese, and Simplified Chinese
+    // all render simultaneously with zero missing glyphs.
+    auto latin_match = common::find_system_latin_font(false, "vi", false);
+    auto cjk_match = common::find_system_cjk_font(false, config_.language, false);
+
+    ImFont* loaded = nullptr;
+    if (latin_match.valid()) {
         ImFontConfig cfg;
-        cfg.FontNo = static_cast<ImU32>(std::max(0, font_match.face_index));
+        cfg.FontNo = static_cast<ImU32>(std::max(0, latin_match.face_index));
         cfg.OversampleH = 2;
         cfg.OversampleV = 1;
         cfg.PixelSnapH = true;
+        loaded = io.Fonts->AddFontFromFileTTF(latin_match.path.c_str(), 16.0f, &cfg);
+    }
 
-        // Dear ImGui 1.92+ uses dynamic on-demand glyph rasterization when the backend
-        // sets ImGuiBackendFlags_RendererHasTextures (both SDLRenderer3 and SDLRenderer2 do).
-        ImFont* loaded = io.Fonts->AddFontFromFileTTF(font_match.path.c_str(), 16.0f, &cfg);
-        if (loaded) {
-            io.FontDefault = loaded;
-            return;
+    if (cjk_match.valid() && cjk_match.path != latin_match.path) {
+        ImFontConfig cfg;
+        cfg.FontNo = static_cast<ImU32>(std::max(0, cjk_match.face_index));
+        cfg.OversampleH = 2;
+        cfg.OversampleV = 1;
+        cfg.PixelSnapH = true;
+        cfg.MergeMode = (loaded != nullptr);
+        ImFont* cjk_font = io.Fonts->AddFontFromFileTTF(cjk_match.path.c_str(), 16.0f, &cfg);
+        if (!loaded && cjk_font) {
+            loaded = cjk_font;
         }
+    }
+
+    if (loaded) {
+        io.FontDefault = loaded;
+        return;
     }
 
     io.Fonts->AddFontDefault();
@@ -321,9 +336,33 @@ bool ImGuiApp::create_textures(std::string* err_out) {
         return t;
     };
 
-    explain_tex_ = make_static_tex(assets_.form_explain());
+    explain_tex_lang_.clear();
+    ensure_explain_texture_for_lang();
     author_tex_ = make_static_tex(assets_.form_author());
     return true;
+}
+
+void ImGuiApp::ensure_explain_texture_for_lang() {
+    if (!sdl_renderer_) return;
+    const std::string& lang = i18n_.language();
+    if (explain_tex_ && explain_tex_lang_ == lang) return;
+
+    if (explain_tex_) {
+        SDL_DestroyTexture(explain_tex_);
+        explain_tex_ = nullptr;
+    }
+    const auto& surf = assets_.form_explain_for_lang(lang);
+    if (surf.valid()) {
+        explain_tex_ = SDL_CreateTexture(
+            sdl_renderer_, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC,
+            surf.width, surf.height);
+        if (explain_tex_) {
+            SDL_UpdateTexture(explain_tex_, nullptr, surf.pixels.data(), surf.width * 4);
+            explain_tex_w_ = surf.width;
+            explain_tex_h_ = surf.height;
+        }
+    }
+    explain_tex_lang_ = lang;
 }
 
 void ImGuiApp::destroy_textures() {
@@ -834,13 +873,13 @@ void ImGuiApp::draw_menu_bar() {
     }
 
     if (ImGui::BeginMenu((tr_clean(i18n_, "menu.settings") + "###menu_settings").c_str())) {
-        // Language
+        // Language (zh-TW, zh-CN, en, vi + any custom locales/*.json)
         if (ImGui::BeginMenu((tr_clean(i18n_, "menu.settings.language") + "###sub_lang").c_str())) {
-            if (ImGui::MenuItem(i18n_.tr("lang.zh_TW").c_str(), nullptr, config_.language != "zh-CN")) {
-                set_language("zh-TW");
-            }
-            if (ImGui::MenuItem(i18n_.tr("lang.zh_CN").c_str(), nullptr, config_.language == "zh-CN")) {
-                set_language("zh-CN");
+            for (const auto& code : common::ordered_languages(i18n_)) {
+                std::string label = common::language_display_name(i18n_, code, false) + "###lang_" + code;
+                if (ImGui::MenuItem(label.c_str(), nullptr, config_.language == code)) {
+                    set_language(code);
+                }
             }
             ImGui::EndMenu();
         }
@@ -1153,7 +1192,8 @@ void ImGuiApp::draw_records_modal() {
 }
 
 void ImGuiApp::draw_image_modal(const char* popup_id, const std::string& title,
-                                SDL_Texture* tex, int tex_w, int tex_h, bool& open_flag) {
+                                SDL_Texture* tex, int tex_w, int tex_h, bool& open_flag,
+                                bool apply_explain_overlay) {
     if (!open_flag) return;
 
     std::string label = title + "###" + popup_id;
@@ -1175,8 +1215,75 @@ void ImGuiApp::draw_image_modal(const char* popup_id, const std::string& title,
             float max_h = std::max(120.0f, vp.y - 60.0f);
             float scale = std::min(1.0f, std::min(max_w / static_cast<float>(tex_w),
                                                   max_h / static_cast<float>(tex_h)));
-            ImGui::Image(reinterpret_cast<ImTextureID>(tex),
-                         ImVec2(static_cast<float>(tex_w) * scale, static_cast<float>(tex_h) * scale));
+            ImVec2 draw_sz(static_cast<float>(tex_w) * scale, static_cast<float>(tex_h) * scale);
+            ImGui::Image(reinterpret_cast<ImTextureID>(tex), draw_sz);
+
+            if (apply_explain_overlay) {
+                auto ov = common::build_explain_overlay(assets_, i18n_);
+                if (ov.enabled) {
+                    ImVec2 p0 = ImGui::GetItemRectMin();
+                    ImVec2 p1 = ImGui::GetItemRectMax();
+                    float sx = (p1.x - p0.x) / static_cast<float>(common::ExplainOverlayLayout::kImageW);
+                    float sy = (p1.y - p0.y) / static_cast<float>(common::ExplainOverlayLayout::kImageH);
+                    ImDrawList* dl = ImGui::GetWindowDrawList();
+                    ImFont* font = ImGui::GetFont();
+
+                    const auto& ex_surf = assets_.form_explain_for_lang(i18n_.language());
+                    ImU32 mask_col = IM_COL32(2, 2, 2, 255);
+                    if (ex_surf.valid() && ex_surf.width > 10 && ex_surf.height > 10) {
+                        size_t idx = (static_cast<size_t>(10) * ex_surf.width + 10) * 4;
+                        mask_col = IM_COL32(ex_surf.pixels[idx], ex_surf.pixels[idx + 1], ex_surf.pixels[idx + 2], 255);
+                    }
+                    auto fill_mask = [&](const common::ExplainRect& r) {
+                        dl->AddRectFilled(
+                            ImVec2(p0.x + r.x * sx, p0.y + r.y * sy),
+                            ImVec2(p0.x + (r.x + r.w) * sx, p0.y + (r.y + r.h) * sy),
+                            mask_col);
+                    };
+                    fill_mask(common::ExplainOverlayLayout::kMaskTurn0);
+                    fill_mask(common::ExplainOverlayLayout::kMaskTurn1);
+                    fill_mask(common::ExplainOverlayLayout::kMaskTurn2Top);
+                    fill_mask(common::ExplainOverlayLayout::kMaskTurn2Bot);
+                    fill_mask(common::ExplainOverlayLayout::kMaskRulesBox);
+
+                    auto draw_centered = [&](const common::ExplainRect& r, const std::string& text) {
+                        auto lines = common::split_lines(text);
+                        float fsz = std::max(10.0f, 15.5f * sy);
+                        float line_h = fsz * 1.15f;
+                        float total_h = line_h * static_cast<float>(lines.size());
+                        float start_y = p0.y + r.y * sy + (r.h * sy - total_h) * 0.5f;
+                        for (size_t i = 0; i < lines.size(); ++i) {
+                            ImVec2 tsz = font->CalcTextSizeA(fsz, FLT_MAX, 0.0f, lines[i].c_str());
+                            float tx = p0.x + r.x * sx + (r.w * sx - tsz.x) * 0.5f;
+                            float ty = start_y + static_cast<float>(i) * line_h;
+                            dl->AddText(font, fsz, ImVec2(tx, ty), IM_COL32(245, 245, 245, 255), lines[i].c_str());
+                        }
+                    };
+                    draw_centered(common::ExplainOverlayLayout::kMaskTurn0, ov.turn_0);
+                    draw_centered(common::ExplainOverlayLayout::kMaskTurn1, ov.turn_1);
+                    draw_centered(common::ExplainOverlayLayout::kMaskTurn2Top, ov.turn_2);
+                    draw_centered(common::ExplainOverlayLayout::kMaskTurn2Bot, ov.turn_2);
+
+                    // Original VB5 bright green (2, 254, 2) rules body sized comfortably for the 146x314 box
+                    const auto& rb = common::ExplainOverlayLayout::kTextRulesBody;
+                    float body_fsz = std::max(10.0f, 14.5f * sy);
+                    ImVec4 body_clip(p0.x + rb.x * sx, p0.y + rb.y * sy,
+                                     p0.x + (rb.x + rb.w) * sx, p0.y + (rb.y + rb.h) * sy);
+                    dl->AddText(font, body_fsz, ImVec2(body_clip.x, body_clip.y),
+                                IM_COL32(2, 254, 2, 255), ov.body.c_str(), nullptr,
+                                rb.w * sx, &body_clip);
+
+                    // Original VB5 bright yellow (254, 253, 5) controls legend
+                    const auto& rc = common::ExplainOverlayLayout::kTextControls;
+                    float ctrl_fsz = std::max(10.0f, 14.0f * sy);
+                    ImVec4 ctrl_clip(p0.x + rc.x * sx, p0.y + rc.y * sy,
+                                     p0.x + (rc.x + rc.w) * sx, p0.y + (rc.y + rc.h) * sy);
+                    dl->AddText(font, ctrl_fsz, ImVec2(ctrl_clip.x, ctrl_clip.y),
+                                IM_COL32(254, 253, 5, 255), ov.controls.c_str(), nullptr,
+                                rc.w * sx, &ctrl_clip);
+                }
+            }
+
             if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
                 open_flag = false;
                 ImGui::CloseCurrentPopup();
@@ -1295,14 +1402,15 @@ void ImGuiApp::draw_hint_overlay() {
 }
 
 void ImGuiApp::draw_modals() {
+    ensure_explain_texture_for_lang();
     draw_game_event_modal();
     draw_records_modal();
     draw_image_modal("llk2_explain", i18n_.tr("dialog.explain.title"),
-                     explain_tex_, assets_.form_explain().width, assets_.form_explain().height,
-                     show_explain_modal_);
+                     explain_tex_, explain_tex_w_, explain_tex_h_,
+                     show_explain_modal_, true);
     draw_image_modal("llk2_author", i18n_.tr("dialog.author.title"),
                      author_tex_, assets_.form_author().width, assets_.form_author().height,
-                     show_author_modal_);
+                     show_author_modal_, false);
     draw_path_fallback_modal();
 }
 

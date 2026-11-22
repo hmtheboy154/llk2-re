@@ -16,6 +16,7 @@ int main(int argc, char* argv[]) {
     std::filesystem::path custom_assets_dir;
     std::filesystem::path screenshot_path;
     std::filesystem::path inspector_screenshot_path;
+    std::string forced_lang;
     bool smoke_test = false;
 
     for (int i = 1; i < argc; ++i) {
@@ -28,12 +29,17 @@ int main(int argc, char* argv[]) {
             screenshot_path = argv[++i];
         } else if (arg == "--inspector-screenshot" && i + 1 < argc) {
             inspector_screenshot_path = argv[++i];
+        } else if (arg == "--lang" && i + 1 < argc) {
+            forced_lang = argv[++i];
         }
     }
 
     llk2::core::Config config;
     config.load(work_dir / "config.json");
 
+    if (!forced_lang.empty()) {
+        config.language = forced_lang;
+    }
     llk2::core::I18n i18n;
     if (std::filesystem::exists(work_dir / "locales")) {
         i18n.load_locales_dir(work_dir / "locales");
@@ -94,17 +100,22 @@ int main(int argc, char* argv[]) {
         }
         app.render_headless_frame();
 
-        // 3. Test live language switching (zh-TW -> zh-CN -> zh-TW)
-        app.set_language("zh-CN");
-        app.render_headless_frame();
-        if (app.current_title() != i18n.tr("app.title") || i18n.language() != "zh-CN") {
-            std::fprintf(stderr, "[FAIL] llk2-bui smoke_test: zh-CN live switch failed\n");
-            app.shutdown();
-            audio.shutdown();
-            return 4;
+        // 3. Test live language switching via the actual Language menu callback path
+        //    (regression test for menu_langs_ dangling-reference std::bad_alloc & tick state!)
+        for (size_t idx : {size_t(1), size_t(2), size_t(3), size_t(0)}) {
+            app.simulate_language_menu_pick(idx);
+            app.render_headless_frame();
+            if (app.current_title() != i18n.tr("app.title") || config.language != i18n.language()) {
+                std::fprintf(stderr, "[FAIL] llk2-bui smoke_test: menu language pick %zu failed\n", idx);
+                app.shutdown();
+                audio.shutdown();
+                return 4;
+            }
         }
-        app.set_language("zh-TW");
-        app.render_headless_frame();
+        if (!forced_lang.empty()) {
+            app.set_language(forced_lang);
+            app.render_headless_frame();
+        }
 
         // 4. Test Blender Dark/Light theme switching + CJK font preservation
         app.set_blender_theme("light");

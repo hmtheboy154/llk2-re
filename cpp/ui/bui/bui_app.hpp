@@ -41,8 +41,9 @@ public:
     bool render_headless_frame(const std::filesystem::path& screenshot_png = {});
     bool render_inspector_headless_frame(const std::filesystem::path& screenshot_png = {});
 
-    // Simulates a left-button click inside the main context (for smoke-test regression coverage).
+    // Simulates a left-button click or menu action inside the main context (for smoke-test coverage).
     void simulate_click(int x, int y);
+    void simulate_language_menu_pick(size_t lang_index);
 
     // Programmatic actions (shared by menus and smoke test)
     void trigger_new_game();
@@ -78,8 +79,6 @@ private:
         Exit,
         ToggleMusic,
         ToggleSound,
-        LangZhTW,
-        LangZhCN,
         Track101,
         Track102,
         Track103,
@@ -100,7 +99,8 @@ private:
         ExportHst,
         ToggleInspector,
         ShowExplain,
-        ShowAuthor
+        ShowAuthor,
+        LangBase = 1000
     };
 
     enum class ModalKind {
@@ -122,8 +122,10 @@ private:
         CloseInspector
     };
 
-    void setup_cjk_font();
-    void apply_cjk_font();
+    void setup_ui_fonts();
+    void apply_ui_font();
+    const char* active_font_family() const noexcept;
+    void ensure_explain_texture_for_lang();
     void build_ui_tree();
     void build_inspector_tree();
     void destroy_inspector_window();
@@ -156,6 +158,8 @@ private:
     static void on_inspector_emit(void* data, BKNode* node, int kind, void* ref, double a, double b);
     static int on_board_event(void* data, BKNode* node, const BKCustomEvent* e);
     static void on_board_draw(void* data, BKNode* node, BuiRaster* r, const int rect[4]);
+    static int on_explain_event(void* data, BKNode* node, const BKCustomEvent* e);
+    static void on_explain_draw(void* data, BKNode* node, BuiRaster* r, const int rect[4]);
     static void on_window_frame(void* data, BKWindow* win);
     static void on_window_timer(void* data, BKWindow* win, int id);
     static int on_window_close(void* data, BKWindow* win);
@@ -174,8 +178,10 @@ private:
     bool initialized_ = false;
     bool headless_mode_ = false;
     bool cjk_font_loaded_ = false;
+    bool latin_font_loaded_ = false;
     std::string current_theme_ = "dark";
     std::string current_title_;
+    std::vector<std::string> menu_langs_;
 
     // Main window UI tree
     BKNode* root_ = nullptr;
@@ -217,6 +223,8 @@ private:
     std::string last_insp_lines_[9];
 
     int board_tex_ = 0;
+    int explain_tex_ = 0;
+    std::string explain_tex_lang_;
     bool board_dirty_ = true;
     int tick_timer_id_ = 0;
 

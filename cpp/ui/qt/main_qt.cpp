@@ -86,14 +86,15 @@ int main(int argc, char* argv[]) {
                 return;
             }
 
-            // 2. Test live language switching (zh-TW -> zh-CN -> zh-TW)
-            win.set_language("zh-CN");
-            if (win.windowTitle().toStdString() != i18n.tr("app.title") || i18n.language() != "zh-CN") {
-                std::fprintf(stderr, "[FAIL] smoke_test: zh-CN live switch failed\n");
-                app.exit(3);
-                return;
+            // 2. Test live language switching (zh-TW -> zh-CN -> en -> vi -> zh-TW)
+            for (const char* lang : {"zh-CN", "en", "vi", "zh-TW"}) {
+                win.set_language(lang);
+                if (win.windowTitle().toStdString() != i18n.tr("app.title") || i18n.language() != lang) {
+                    std::fprintf(stderr, "[FAIL] smoke_test: %s live switch failed\n", lang);
+                    app.exit(3);
+                    return;
+                }
             }
-            win.set_language("zh-TW");
 
             // 3. Test live scaling & filter changes
             win.set_scale_mode(llk2::core::WindowScaleMode::Scale1_5x);
@@ -111,6 +112,20 @@ int main(int argc, char* argv[]) {
             llk2::ui::qt::TableDialog table_dlg(scores, i18n, 0, "Tester", &win);
             table_dlg.show();
             table_dlg.close();
+
+            // Verify translated Game Rules overlay renders cleanly for English & Vietnamese
+            for (const char* rlang : {"en", "vi"}) {
+                win.set_language(rlang);
+                auto ov = llk2::ui::common::build_explain_overlay(assets, i18n);
+                llk2::ui::qt::ImageSplashDialog explain_ov(
+                    assets.form_explain_for_lang(rlang),
+                    QString::fromStdString(i18n.tr("dialog.explain.title")),
+                    &win, ov);
+                explain_ov.show();
+                explain_ov.repaint();
+                explain_ov.close();
+            }
+            win.set_language("zh-TW");
 
             llk2::ui::qt::ImageSplashDialog explain_dlg(assets.form_explain(), "Explain", &win);
             explain_dlg.show();

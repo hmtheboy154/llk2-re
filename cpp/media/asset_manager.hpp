@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace llk2::media {
@@ -48,6 +49,9 @@ public:
     const RgbaSurface& pic_mjdata() const { return pic_mjdata_; }
     const RgbaSurface& pic_level(int level) const { return pic_levels_.at(level); }
     const RgbaSurface& form_explain() const { return form_explain_; }
+    // Returns per-locale override (assets/locales/<lang>/Form_Explain_Picture.*) if present, else form_explain().
+    const RgbaSurface& form_explain_for_lang(const std::string& lang_code) const;
+    bool has_locale_explain_override(const std::string& lang_code) const;
     const RgbaSurface& form_author() const { return form_author_; }
 
     const std::filesystem::path& icon_path() const { return icon_path_; }
@@ -67,6 +71,7 @@ private:
                              RgbaSurface& out_surf,
                              std::string* err_out);
     void discover_ost_tracks(const std::filesystem::path& assets_dir);
+    void discover_locale_explain_overrides(const std::filesystem::path& assets_dir);
 
     bool loaded_ = false;
     bool has_ost_ = false;
@@ -77,6 +82,7 @@ private:
     RgbaSurface pic_mjdata_;
     std::array<RgbaSurface, 7> pic_levels_;
     RgbaSurface form_explain_;
+    std::unordered_map<std::string, RgbaSurface> locale_explain_overrides_;
     RgbaSurface form_author_;
 
     std::filesystem::path icon_path_;

@@ -360,19 +360,18 @@ void MainWindow::build_menus() {
     });
 
     // 3. 設定(&S)
-    // 3a. 語言(&L)
+    // 3a. 語言(&L) — supports zh-TW, zh-CN, en, vi + any custom locales/*.json
     submenu_lang_ = menu_settings_->addMenu("");
     group_lang_ = new QActionGroup(this);
     group_lang_->setExclusive(true);
-    act_lang_tw_ = submenu_lang_->addAction("");
-    act_lang_tw_->setCheckable(true);
-    act_lang_cn_ = submenu_lang_->addAction("");
-    act_lang_cn_->setCheckable(true);
-    group_lang_->addAction(act_lang_tw_);
-    group_lang_->addAction(act_lang_cn_);
-
-    connect(act_lang_tw_, &QAction::triggered, this, [this]() { set_language("zh-TW"); });
-    connect(act_lang_cn_, &QAction::triggered, this, [this]() { set_language("zh-CN"); });
+    lang_actions_.clear();
+    for (const auto& code : common::ordered_languages(i18n_)) {
+        QAction* act = submenu_lang_->addAction("");
+        act->setCheckable(true);
+        group_lang_->addAction(act);
+        connect(act, &QAction::triggered, this, [this, code]() { set_language(code); });
+        lang_actions_.emplace_back(code, act);
+    }
 
     menu_settings_->addSeparator();
 
@@ -502,8 +501,9 @@ void MainWindow::retranslate_ui() {
 
     menu_settings_->setTitle(qtr("menu.settings"));
     submenu_lang_->setTitle(qtr("menu.settings.language"));
-    act_lang_tw_->setText(qtr("lang.zh_TW"));
-    act_lang_cn_->setText(qtr("lang.zh_CN"));
+    for (const auto& [code, act] : lang_actions_) {
+        act->setText(QString::fromStdString(common::language_display_name(i18n_, code, false)));
+    }
 
     submenu_midi_tracks_->setTitle(qtr("menu.settings.midi_tracks"));
     act_midi_tracks_[0]->setText(qtr("menu.settings.track_101"));
@@ -547,10 +547,11 @@ void MainWindow::sync_menu_states() {
     act_music_->setChecked(config_.music_on);
     act_sound_->setChecked(config_.sound_on);
 
-    if (config_.language == "zh-CN") {
-        act_lang_cn_->setChecked(true);
-    } else {
-        act_lang_tw_->setChecked(true);
+    for (const auto& [code, act] : lang_actions_) {
+        if (code == config_.language) {
+            act->setChecked(true);
+            break;
+        }
     }
 
     for (int i = 0; i < 3; ++i) {
@@ -836,7 +837,9 @@ void MainWindow::on_show_records() {
 }
 
 void MainWindow::on_show_explain() {
-    ImageSplashDialog dlg(assets_.form_explain(), QString::fromStdString(i18n_.tr("dialog.explain.title")), this);
+    const auto& surf = assets_.form_explain_for_lang(i18n_.language());
+    auto overlay = common::build_explain_overlay(assets_, i18n_);
+    ImageSplashDialog dlg(surf, QString::fromStdString(i18n_.tr("dialog.explain.title")), this, std::move(overlay));
     dlg.exec();
 }
 

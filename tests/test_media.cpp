@@ -1,8 +1,10 @@
 #include "core/config.hpp"
 #include "core/game_state.hpp"
+#include "core/i18n.hpp"
 #include "media/asset_manager.hpp"
 #include "media/audio_engine.hpp"
 #include "media/board_renderer.hpp"
+#include "ui/common/ui_helpers.hpp"
 
 #undef NDEBUG
 #include <cassert>
@@ -167,6 +169,37 @@ static void test_renderer_and_audio_with_assets(const std::filesystem::path& ass
     assert(!audio.is_midi_playing());
 
     audio.shutdown();
+
+    // 3. Verify 4-language i18n JSON catalogs (zh-TW, zh-CN, en, vi) and Rules overlay config
+    I18n i18n;
+    std::filesystem::path locales_dir = std::filesystem::path(LLK2_SOURCE_DIR) / "locales";
+    assert(i18n.load_locales_dir(locales_dir));
+    auto langs = llk2::ui::common::ordered_languages(i18n);
+    assert(langs.size() >= 4);
+    assert(langs[0] == "zh-TW" && langs[1] == "zh-CN" && langs[2] == "en" && langs[3] == "vi");
+
+    const char* required_keys[] = {
+        "app.title", "menu.game", "menu.audio", "menu.settings", "menu.about",
+        "menu.settings.language", "menu.settings.inspector", "menu.settings.theme",
+        "dialog.explain.title", "dialog.btn.close", "inspector.title",
+        "inspector.highlight_hint", "msg.stage_clear.body", "msg.all_clear.body"
+    };
+    for (const char* lang : {"zh-TW", "zh-CN", "en", "vi"}) {
+        assert(i18n.set_language(lang));
+        for (const char* key : required_keys) {
+            std::string val = i18n.tr(key);
+            assert(!val.empty() && val != key);
+        }
+        assert(assets.form_explain_for_lang(lang).valid());
+        auto ov = llk2::ui::common::build_explain_overlay(assets, i18n);
+        if (std::string(lang) == "en" || std::string(lang) == "vi") {
+            assert(ov.enabled);
+            assert(!ov.turn_0.empty() && !ov.turn_1.empty() && !ov.turn_2.empty());
+            assert(!ov.body.empty() && !ov.controls.empty());
+        } else {
+            assert(!ov.enabled);
+        }
+    }
 }
 
 int main() {

@@ -150,10 +150,39 @@ bool AssetManager::load_from_dir(const std::filesystem::path& assets_dir, std::s
     }
 
     discover_ost_tracks(assets_dir);
+    discover_locale_explain_overrides(assets_dir);
 
     assets_dir_ = assets_dir;
     loaded_ = true;
     return true;
+}
+
+void AssetManager::discover_locale_explain_overrides(const std::filesystem::path& assets_dir) {
+    locale_explain_overrides_.clear();
+    auto loc_root = assets_dir / "locales";
+    if (!std::filesystem::exists(loc_root) || !std::filesystem::is_directory(loc_root)) {
+        return;
+    }
+    for (const auto& entry : std::filesystem::directory_iterator(loc_root)) {
+        if (!entry.is_directory()) continue;
+        std::string lang = entry.path().filename().string();
+        RgbaSurface surf;
+        if (find_and_load_image(entry.path(), "Form_Explain_Picture", surf, nullptr)) {
+            locale_explain_overrides_[lang] = std::move(surf);
+        }
+    }
+}
+
+bool AssetManager::has_locale_explain_override(const std::string& lang_code) const {
+    return locale_explain_overrides_.find(lang_code) != locale_explain_overrides_.end();
+}
+
+const RgbaSurface& AssetManager::form_explain_for_lang(const std::string& lang_code) const {
+    auto it = locale_explain_overrides_.find(lang_code);
+    if (it != locale_explain_overrides_.end() && it->second.valid()) {
+        return it->second;
+    }
+    return form_explain_;
 }
 
 bool AssetManager::auto_load(const std::filesystem::path& exe_or_work_dir, std::string* err_out) {

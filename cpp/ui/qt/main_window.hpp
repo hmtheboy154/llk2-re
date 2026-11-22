@@ -21,6 +21,8 @@
 #include <array>
 #include <filesystem>
 #include <functional>
+#include <utility>
+#include <vector>
 
 namespace llk2::ui::qt {
 
@@ -148,8 +150,7 @@ private:
     // Settings submenus & actions
     QMenu* submenu_lang_ = nullptr;
     QActionGroup* group_lang_ = nullptr;
-    QAction* act_lang_tw_ = nullptr;
-    QAction* act_lang_cn_ = nullptr;
+    std::vector<std::pair<std::string, QAction*>> lang_actions_;
 
     QMenu* submenu_midi_tracks_ = nullptr;
     std::array<QAction*, 3> act_midi_tracks_{};
