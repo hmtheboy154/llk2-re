@@ -58,10 +58,14 @@ bool Config::save(const std::filesystem::path& path) const {
     if (!f) {
         return false;
     }
+    const char* backend_str = "embedded";
+    if (midi_backend == MidiBackend::NativeOS) backend_str = "native";
+    else if (midi_backend == MidiBackend::OstAudio) backend_str = "ost";
+
     f << "{\n"
       << "  \"music_on\": " << (music_on ? "true" : "false") << ",\n"
       << "  \"sound_on\": " << (sound_on ? "true" : "false") << ",\n"
-      << "  \"midi_backend\": \"" << (midi_backend == MidiBackend::NativeOS ? "native" : "embedded") << "\",\n"
+      << "  \"midi_backend\": \"" << backend_str << "\",\n"
       << "  \"midi_track_101\": " << (midi_tracks_enabled[0] ? "true" : "false") << ",\n"
       << "  \"midi_track_102\": " << (midi_tracks_enabled[1] ? "true" : "false") << ",\n"
       << "  \"midi_track_103\": " << (midi_tracks_enabled[2] ? "true" : "false") << ",\n"
@@ -135,7 +139,9 @@ bool Config::load(const std::filesystem::path& path) {
     music_on = extract_bool(s, "music_on", music_on);
     sound_on = extract_bool(s, "sound_on", sound_on);
     std::string backend = extract_str(s, "midi_backend", "embedded");
-    midi_backend = (backend == "native") ? MidiBackend::NativeOS : MidiBackend::EmbeddedSoundFont;
+    if (backend == "native") midi_backend = MidiBackend::NativeOS;
+    else if (backend == "ost") midi_backend = MidiBackend::OstAudio;
+    else midi_backend = MidiBackend::EmbeddedSoundFont;
     midi_tracks_enabled[0] = extract_bool(s, "midi_track_101", true);
     midi_tracks_enabled[1] = extract_bool(s, "midi_track_102", true);
     midi_tracks_enabled[2] = extract_bool(s, "midi_track_103", true);

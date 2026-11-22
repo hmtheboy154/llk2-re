@@ -11,7 +11,7 @@ I18n::I18n() {
 
 void I18n::init_builtin_catalogs() {
     auto& tw = catalogs_["zh-TW"];
-    tw["app.title"] = "連連看2 v1.02";
+    tw["app.title"] = "連連看2";
     tw["dialog.explain.title"] = "遊戲說明";
     tw["dialog.author.title"] = "作者";
     tw["dialog.table.title"] = "連連看2";
@@ -27,13 +27,15 @@ void I18n::init_builtin_catalogs() {
     tw["menu.settings.language"] = "語言(&L)";
     tw["lang.zh_TW"] = "繁體中文 (zh-TW)";
     tw["lang.zh_CN"] = "简体中文 (zh-CN)";
-    tw["menu.settings.midi_tracks"] = "MIDI 音軌";
-    tw["menu.settings.track_101"] = "音軌 1 (101.mid)";
-    tw["menu.settings.track_102"] = "音軌 2 (102.mid — FF4 Town)";
-    tw["menu.settings.track_103"] = "音軌 3 (103.mid — Canyon)";
-    tw["menu.settings.midi_device"] = "MIDI 播放裝置";
+    tw["menu.settings.midi_tracks"] = "背景音樂音軌";
+    tw["menu.settings.track_101"] = "音軌 1：Michael P. Sirotkin - Aquarelle";
+    tw["menu.settings.track_102"] = "音軌 2：Miyuki Nakajima - Sora to Kimi no Aida ni";
+    tw["menu.settings.track_103"] = "音軌 3：Air Supply - Making Love Out Of Nothing At All";
+    tw["menu.settings.midi_device"] = "音樂播放裝置";
+    tw["menu.settings.midi_ost"] = "原聲帶無損音訊 (OST FLAC/MP3)";
     tw["menu.settings.midi_native"] = "系統原生 MIDI 裝置";
     tw["menu.settings.midi_embedded"] = "內建 SoundFont 合成器";
+    tw["menu.settings.select_soundfont"] = "選擇自訂 SoundFont (.sf2)...";
     tw["menu.settings.scale"] = "畫面縮放";
     tw["menu.settings.scale_1x"] = "1× (768×550 原始大小)";
     tw["menu.settings.scale_1_5x"] = "1.5× (1152×825)";
@@ -81,13 +83,15 @@ void I18n::init_builtin_catalogs() {
     cn["menu.settings.language"] = "语言(&L)";
     cn["lang.zh_TW"] = "繁體中文 (zh-TW)";
     cn["lang.zh_CN"] = "简体中文 (zh-CN)";
-    cn["menu.settings.midi_tracks"] = "MIDI 音轨";
-    cn["menu.settings.track_101"] = "音轨 1 (101.mid)";
-    cn["menu.settings.track_102"] = "音轨 2 (102.mid — FF4 Town)";
-    cn["menu.settings.track_103"] = "音轨 3 (103.mid — Canyon)";
-    cn["menu.settings.midi_device"] = "MIDI 播放设备";
+    cn["menu.settings.midi_tracks"] = "背景音乐音轨";
+    cn["menu.settings.track_101"] = "音轨 1：Michael P. Sirotkin - Aquarelle";
+    cn["menu.settings.track_102"] = "音轨 2：Miyuki Nakajima - Sora to Kimi no Aida ni";
+    cn["menu.settings.track_103"] = "音轨 3：Air Supply - Making Love Out Of Nothing At All";
+    cn["menu.settings.midi_device"] = "音乐播放设备";
+    cn["menu.settings.midi_ost"] = "原声带无损音频 (OST FLAC/MP3)";
     cn["menu.settings.midi_native"] = "系统原生 MIDI 设备";
     cn["menu.settings.midi_embedded"] = "内置 SoundFont 合成器";
+    cn["menu.settings.select_soundfont"] = "选择自定义 SoundFont (.sf2)...";
     cn["menu.settings.scale"] = "画面缩放";
     cn["menu.settings.scale_1x"] = "1× (768×550 原始大小)";
     cn["menu.settings.scale_1_5x"] = "1.5× (1152×825)";

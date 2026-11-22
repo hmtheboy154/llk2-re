@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.21)
 project(llk2_remastered VERSION 2.0.0 LANGUAGES C CXX)
 
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    message(STATUS "LLK2: Setting default build type to Release")
+    set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type (Debug, Release, RelWithDebInfo, MinSizeRel)" FORCE)
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -64,7 +69,15 @@ target_include_directories(llk2_media PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/subprojects/TinySoundFont
     ${CMAKE_CURRENT_SOURCE_DIR}/subprojects/stb
+    ${CMAKE_CURRENT_SOURCE_DIR}/subprojects/dr_libs
 )
+
+set(LLK2_BUNDLED_SF2 "${CMAKE_CURRENT_SOURCE_DIR}/subprojects/GeneralUser-GS/GeneralUser-GS.sf2")
+if(EXISTS "${LLK2_BUNDLED_SF2}")
+    target_compile_definitions(llk2_media PRIVATE
+        LLK2_BUNDLED_SOUNDFONT="${LLK2_BUNDLED_SF2}"
+    )
+endif()
 
 target_link_libraries(llk2_media PUBLIC llk2_core)
 
@@ -124,6 +137,15 @@ if(LLK2_UI_QT)
         target_compile_options(llk2-qt PRIVATE /W4 /utf-8)
     else()
         target_compile_options(llk2-qt PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+
+    if(EXISTS "${LLK2_BUNDLED_SF2}")
+        add_custom_command(TARGET llk2-qt POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${LLK2_BUNDLED_SF2}"
+                "$<TARGET_FILE_DIR:llk2-qt>/soundfont.sf2"
+            COMMENT "Copying bundled GeneralUser-GS.sf2 next to llk2-qt"
+        )
     endif()
 endif()
 

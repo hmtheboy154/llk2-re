@@ -28,6 +28,9 @@ public:
     void render_title_screen();
     void render_board(const core::GameState& state);
 
+    // Force-invalidate the cached static board surface (Pic_Buffer equivalent)
+    void invalidate_cache() noexcept { cache_key_.valid = false; }
+
     const RgbaSurface& canvas() const { return canvas_; }
 
     // Scale internal 768x550 canvas to an arbitrary output size using Nearest or Bilinear filtering
@@ -37,13 +40,39 @@ public:
     static void compute_aspect_viewport(int win_w, int win_h, int& vp_x, int& vp_y, int& vp_w, int& vp_h);
 
 private:
-    void blit(const RgbaSurface& src, int dst_x, int dst_y, int w, int h, int src_x, int src_y, BlitOp op);
+    struct BaseCacheKey {
+        bool valid = false;
+        bool board_active = false;
+        bool animating_link = false;
+        int level = -1;
+        int palette_off = -1;
+        int lives = -1;
+        int rem_sec = -1;
+        int iscore = -1;
+        int tiles_left = -1;
+        int sel1_c = -1;
+        int sel1_r = -1;
+        int sel2_c = -1;
+        int sel2_r = -1;
+        uint64_t board_hash = 0;
+
+        bool operator==(const BaseCacheKey& o) const noexcept = default;
+    };
+
+    static uint64_t compute_board_hash(const core::Board& b) noexcept;
+    void rebuild_base_cache(const core::GameState& state);
+
+    static void blit_to(RgbaSurface& dst, const RgbaSurface& src,
+                        int dst_x, int dst_y, int w, int h, int src_x, int src_y, BlitOp op);
     void set_pixel(int x, int y, uint8_t r, uint8_t g, uint8_t b);
+    static void draw_hollow_rect_to(RgbaSurface& dst, int x1, int y1, int x2, int y2, uint8_t r, uint8_t g, uint8_t b);
     void draw_hollow_rect(int x1, int y1, int x2, int y2, uint8_t r, uint8_t g, uint8_t b);
     void draw_thick_line(int x1, int y1, int x2, int y2, int width, uint8_t r, uint8_t g, uint8_t b);
 
     const AssetManager& assets_;
-    RgbaSurface canvas_;
+    RgbaSurface base_cache_; // Equivalent to VB5 Pic_Buffer (background + HUD + 144 tiles)
+    RgbaSurface canvas_;     // Equivalent to VB5 Pic_Show (base_cache_ + hover frame / lightning beam)
+    BaseCacheKey cache_key_{};
 };
 
 } // namespace llk2::media

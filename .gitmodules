@@ -4,3 +4,9 @@
 [submodule "subprojects/stb"]
 	path = subprojects/stb
 	url = https://github.com/nothings/stb.git
+[submodule "subprojects/dr_libs"]
+	path = subprojects/dr_libs
+	url = https://github.com/mackron/dr_libs.git
+[submodule "subprojects/GeneralUser-GS"]
+	path = subprojects/GeneralUser-GS
+	url = https://github.com/mrbumpy409/GeneralUser-GS.git

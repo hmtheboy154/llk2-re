@@ -8,7 +8,8 @@ namespace llk2::core {
 
 enum class MidiBackend {
     EmbeddedSoundFont = 0, // Built-in TinySoundFont (.sf2) via SDL audio
-    NativeOS = 1           // OS native MIDI device (ALSA Sequencer / WinMM / CoreMIDI)
+    NativeOS = 1,          // OS native MIDI device (ALSA Sequencer / WinMM / CoreMIDI)
+    OstAudio = 2           // Lossless OST recordings (FLAC/MP3/WAV) via SDL audio
 };
 
 enum class WindowScaleMode {

@@ -11,6 +11,7 @@
 #include <QAction>
 #include <QActionGroup>
 #include <QCloseEvent>
+#include <QImage>
 #include <QMainWindow>
 #include <QMenu>
 #include <QMouseEvent>
@@ -32,17 +33,27 @@ public:
 
     void set_callbacks(MouseMoveCallback on_move, MouseDownCallback on_down);
 
+    // Sync full 768x550 RGBA8888 canvas to native QImage::Format_RGB32 and schedule repaint
+    void sync_full(bool immediate_repaint = false);
+
+    // Fast partial sync for mouse hover transitions (updates only the 1-2 affected 46x56 tiles!)
+    void sync_tile_hover_change(int prev_c, int prev_r, int new_c, int new_r);
+
 protected:
     void paintEvent(QPaintEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
+    void mouseDoubleClickEvent(QMouseEvent* event) override;
     void leaveEvent(QEvent* event) override;
 
 private:
     bool map_to_logical(const QPointF& pos, float& out_lx, float& out_ly) const;
+    void copy_rgba_rect_to_rgb32(int rx, int ry, int rw, int rh);
+    QRect map_logical_rect_to_widget(int rx, int ry, int rw, int rh) const;
 
     media::BoardRenderer& renderer_;
     const core::Config& config_;
+    QImage rgb32_buf_;
     MouseMoveCallback on_move_;
     MouseDownCallback on_down_;
 };
@@ -88,6 +99,7 @@ private:
     void on_show_author();
     void on_import_hst();
     void on_export_hst();
+    void on_select_soundfont();
 
     static uint64_t now_ticks_ms();
 
@@ -130,8 +142,10 @@ private:
 
     QMenu* submenu_midi_device_ = nullptr;
     QActionGroup* group_midi_device_ = nullptr;
+    QAction* act_midi_ost_ = nullptr;
     QAction* act_midi_native_ = nullptr;
     QAction* act_midi_embedded_ = nullptr;
+    QAction* act_select_sf2_ = nullptr;
 
     QMenu* submenu_scale_ = nullptr;
     QActionGroup* group_scale_mode_ = nullptr;

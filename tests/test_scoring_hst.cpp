@@ -3,6 +3,7 @@
 #include "core/hst_score.hpp"
 #include "core/i18n.hpp"
 
+#undef NDEBUG
 #include <cassert>
 #include <cstdio>
 #include <filesystem>
@@ -128,6 +129,46 @@ static void test_gamestate_progression() {
     // Tick 1000 ms (at t = 2000) -> remaining_seconds should drop by 1 (599)
     gs.tick(2000);
     assert(gs.remaining_seconds() == 599);
+
+    // Clear all tiles except the last hinted pair on Level 0
+    int c1 = static_cast<int>(gs.board().hint_x1());
+    int r1 = static_cast<int>(gs.board().hint_y1());
+    int c2 = static_cast<int>(gs.board().hint_x2());
+    int r2 = static_cast<int>(gs.board().hint_y2());
+    for (int r = 0; r < Board::kRows; ++r) {
+        for (int c = 0; c < Board::kCols; ++c) {
+            if ((c == c1 && r == r1) || (c == c2 && r == r2)) continue;
+            gs.board().cell(c, r).occupied = false;
+        }
+    }
+    gs.board().set_tiles_left(2);
+
+    // Click c1 then c2 -> must enter animating_link() immediately on the 2nd click (0 ms latency)
+    gs.on_mouse_down(1, 21.0f + c1 * 40 + 10, 6.0f + r1 * 50 + 10, 2010);
+    gs.on_mouse_down(1, 21.0f + c2 * 40 + 10, 6.0f + r2 * 50 + 10, 2020);
+    assert(gs.animating_link());
+
+    // Advance past 200ms link flash -> stage 0 cleared!
+    // Level must stay 0 while awaiting StageClearModal so Pic_Level(0) stays on screen!
+    gs.tick(2250);
+    assert(gs.awaiting_modal());
+    assert(gs.level() == 0);
+    auto evs = gs.consume_events();
+    bool saw_stage_clear = false;
+    for (const auto& ev : evs) {
+        if (ev.type == GameEventType::StageClearModal) {
+            saw_stage_clear = true;
+            assert(ev.next_level_display == 2);
+        }
+    }
+    assert(saw_stage_clear);
+
+    // Only after acknowledging the modal does level advance to 1!
+    gs.acknowledge_modal(2300);
+    assert(!gs.awaiting_modal());
+    assert(gs.level() == 1);
+    assert(gs.board_active());
+    assert(gs.board().tiles_left() == 144);
 }
 
 int main() {

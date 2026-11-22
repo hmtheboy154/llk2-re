@@ -42,6 +42,73 @@ bool AssetManager::find_and_load_image(const std::filesystem::path& images_dir,
     return false;
 }
 
+void AssetManager::discover_ost_tracks(const std::filesystem::path& assets_dir) {
+    has_ost_ = false;
+    for (auto& p : ost_paths_) p.clear();
+
+    std::vector<std::filesystem::path> search_dirs = {
+        assets_dir / "ost",
+        assets_dir / "midi",
+    };
+
+    // Also check if the Internet Archive OST dump folder exists next to the repo or workspace
+    auto repo_dir = assets_dir.parent_path();
+    for (const auto& base : {repo_dir, repo_dir.parent_path(), std::filesystem::current_path(), std::filesystem::current_path().parent_path()}) {
+        if (base.empty()) continue;
+        auto ia_dir = base / "0_pVh1BFkfw0AihZxQ7EIPAQ3YYA4X4BIQCLfLD8Q1bf" / "上海步天软件有限公司 - KAWAI连连看OST";
+        if (std::filesystem::exists(ia_dir) && std::filesystem::is_directory(ia_dir)) {
+            search_dirs.push_back(ia_dir);
+        }
+    }
+
+    static const char* kExts[] = {".flac", ".FLAC", ".wav", ".WAV", ".mp3", ".MP3"};
+    static const char* kPrefixes[3] = {"01.", "02.", "03."};
+
+    for (int i = 0; i < 3; ++i) {
+        std::string id_str = std::to_string(101 + i);
+        bool found = false;
+
+        for (const auto& dir : search_dirs) {
+            if (!std::filesystem::exists(dir) || !std::filesystem::is_directory(dir)) continue;
+
+            // 1. Direct match: 101.flac / 101.wav / 101.mp3
+            for (const char* ext : kExts) {
+                auto cand = dir / (id_str + ext);
+                if (std::filesystem::exists(cand) && std::filesystem::is_regular_file(cand)) {
+                    ost_paths_[i] = cand;
+                    found = true;
+                    break;
+                }
+            }
+            if (found) break;
+
+            // 2. Prefix match in OST folder: "01. Aquarelle...flac" (prefer .flac over .mp3)
+            std::filesystem::path mp3_fallback;
+            for (const auto& entry : std::filesystem::directory_iterator(dir)) {
+                if (!entry.is_regular_file()) continue;
+                std::string fname = entry.path().filename().string();
+                std::string ext = entry.path().extension().string();
+                if (fname.rfind(kPrefixes[i], 0) == 0) {
+                    if (ext == ".flac" || ext == ".FLAC" || ext == ".wav" || ext == ".WAV") {
+                        ost_paths_[i] = entry.path();
+                        found = true;
+                        break;
+                    } else if ((ext == ".mp3" || ext == ".MP3") && mp3_fallback.empty()) {
+                        mp3_fallback = entry.path();
+                    }
+                }
+            }
+            if (!found && !mp3_fallback.empty()) {
+                ost_paths_[i] = mp3_fallback;
+                found = true;
+            }
+            if (found) break;
+        }
+    }
+
+    has_ost_ = !ost_paths_[0].empty() && !ost_paths_[1].empty() && !ost_paths_[2].empty();
+}
+
 bool AssetManager::load_from_dir(const std::filesystem::path& assets_dir, std::string* err_out) {
     loaded_ = false;
     if (!std::filesystem::exists(assets_dir)) {
@@ -82,6 +149,8 @@ bool AssetManager::load_from_dir(const std::filesystem::path& assets_dir, std::s
         }
     }
 
+    discover_ost_tracks(assets_dir);
+
     assets_dir_ = assets_dir;
     loaded_ = true;
     return true;
@@ -121,6 +190,13 @@ std::filesystem::path AssetManager::sfx_path(int sfx_id) const {
 std::filesystem::path AssetManager::midi_path(int track_idx) const {
     if (track_idx >= 0 && track_idx < 3) {
         return midi_paths_[track_idx];
+    }
+    return {};
+}
+
+std::filesystem::path AssetManager::ost_path(int track_idx) const {
+    if (track_idx >= 0 && track_idx < 3) {
+        return ost_paths_[track_idx];
     }
     return {};
 }

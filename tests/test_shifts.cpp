@@ -1,5 +1,6 @@
 #include "core/board.hpp"
 
+#undef NDEBUG
 #include <cassert>
 #include <cstdio>
 

@@ -8,6 +8,7 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPainter>
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 
@@ -16,14 +17,88 @@ namespace llk2::ui::qt {
 // ── BoardWidget ──────────────────────────────────────────────────────────────
 
 BoardWidget::BoardWidget(media::BoardRenderer& renderer, const core::Config& config, QWidget* parent)
-    : QWidget(parent), renderer_(renderer), config_(config) {
+    : QWidget(parent),
+      renderer_(renderer),
+      config_(config),
+      rgb32_buf_(media::BoardRenderer::WIDTH, media::BoardRenderer::HEIGHT, QImage::Format_RGB32) {
+    rgb32_buf_.fill(Qt::black);
     setMouseTracking(true);
+    setAttribute(Qt::WA_OpaquePaintEvent, true);
     setMinimumSize(core::GameState::kCanvasWidth / 2, core::GameState::kCanvasHeight / 2);
 }
 
 void BoardWidget::set_callbacks(MouseMoveCallback on_move, MouseDownCallback on_down) {
     on_move_ = std::move(on_move);
     on_down_ = std::move(on_down);
+}
+
+void BoardWidget::copy_rgba_rect_to_rgb32(int rx, int ry, int rw, int rh) {
+    const auto& surf = renderer_.canvas();
+    if (!surf.valid()) return;
+
+    int x0 = std::clamp(rx, 0, surf.width);
+    int y0 = std::clamp(ry, 0, surf.height);
+    int x1 = std::clamp(rx + rw, 0, surf.width);
+    int y1 = std::clamp(ry + rh, 0, surf.height);
+    if (x0 >= x1 || y0 >= y1) return;
+
+    for (int y = y0; y < y1; ++y) {
+        const uint8_t* src = surf.pixels.data() + (static_cast<size_t>(y) * surf.width + x0) * 4;
+        uint32_t* dst = reinterpret_cast<uint32_t*>(rgb32_buf_.scanLine(y)) + x0;
+        int span = x1 - x0;
+        for (int x = 0; x < span; ++x) {
+            uint32_t r = src[x * 4 + 0];
+            uint32_t g = src[x * 4 + 1];
+            uint32_t b = src[x * 4 + 2];
+            dst[x] = 0xFF000000u | (r << 16) | (g << 8) | b;
+        }
+    }
+}
+
+QRect BoardWidget::map_logical_rect_to_widget(int rx, int ry, int rw, int rh) const {
+    int vp_x = 0, vp_y = 0, vp_w = 0, vp_h = 0;
+    media::BoardRenderer::compute_aspect_viewport(width(), height(), vp_x, vp_y, vp_w, vp_h);
+    if (vp_w <= 0 || vp_h <= 0) return rect();
+
+    double sx = static_cast<double>(vp_w) / static_cast<double>(media::BoardRenderer::WIDTH);
+    double sy = static_cast<double>(vp_h) / static_cast<double>(media::BoardRenderer::HEIGHT);
+
+    int wx0 = vp_x + static_cast<int>(std::floor(rx * sx)) - 2;
+    int wy0 = vp_y + static_cast<int>(std::floor(ry * sy)) - 2;
+    int wx1 = vp_x + static_cast<int>(std::ceil((rx + rw) * sx)) + 2;
+    int wy1 = vp_y + static_cast<int>(std::ceil((ry + rh) * sy)) + 2;
+
+    wx0 = std::clamp(wx0, 0, width());
+    wy0 = std::clamp(wy0, 0, height());
+    wx1 = std::clamp(wx1, 0, width());
+    wy1 = std::clamp(wy1, 0, height());
+    return QRect(wx0, wy0, std::max(0, wx1 - wx0), std::max(0, wy1 - wy0));
+}
+
+void BoardWidget::sync_full(bool immediate_repaint) {
+    copy_rgba_rect_to_rgb32(0, 0, media::BoardRenderer::WIDTH, media::BoardRenderer::HEIGHT);
+    if (immediate_repaint) {
+        repaint();
+    } else {
+        update();
+    }
+}
+
+void BoardWidget::sync_tile_hover_change(int prev_c, int prev_r, int new_c, int new_r) {
+    QRegion dirty;
+    auto mark_tile = [&](int c, int r) {
+        if (c < 0 || c >= core::Board::kCols || r < 0 || r >= core::Board::kRows) return;
+        int px = core::GameState::kOffX + c * media::BoardRenderer::TILE_W;
+        int py = core::GameState::kOffY + r * media::BoardRenderer::TILE_H;
+        copy_rgba_rect_to_rgb32(px, py, 46, 56);
+        dirty += map_logical_rect_to_widget(px, py, 46, 56);
+    };
+    mark_tile(prev_c, prev_r);
+    mark_tile(new_c, new_r);
+
+    if (!dirty.isEmpty()) {
+        update(dirty);
+    }
 }
 
 bool BoardWidget::map_to_logical(const QPointF& pos, float& out_lx, float& out_ly) const {
@@ -42,24 +117,44 @@ bool BoardWidget::map_to_logical(const QPointF& pos, float& out_lx, float& out_l
     return true;
 }
 
-void BoardWidget::paintEvent(QPaintEvent* /*event*/) {
+void BoardWidget::paintEvent(QPaintEvent* event) {
     QPainter painter(this);
-    painter.fillRect(rect(), Qt::black);
-
-    const auto& surf = renderer_.canvas();
-    if (!surf.valid()) return;
 
     int vp_x = 0, vp_y = 0, vp_w = 0, vp_h = 0;
     media::BoardRenderer::compute_aspect_viewport(width(), height(), vp_x, vp_y, vp_w, vp_h);
+    QRect vp_rect(vp_x, vp_y, vp_w, vp_h);
+
+    // Only fill letterbox/pillarbox regions outside the viewport (zero overdraw!)
+    if (vp_rect != rect()) {
+        QRegion bars = QRegion(event->rect()) - QRegion(vp_rect);
+        for (const QRect& bar : bars) {
+            painter.fillRect(bar, Qt::black);
+        }
+    }
+
     if (vp_w <= 0 || vp_h <= 0) return;
 
-    QImage img(surf.pixels.data(), surf.width, surf.height, surf.width * 4, QImage::Format_RGBA8888);
-    if ( config_.scale_filter == core::ScaleFilter::Bilinear ) {
-        painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    QRect dirty_vp = event->rect().intersected(vp_rect);
+    if (dirty_vp.isEmpty()) return;
+
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, config_.scale_filter == core::ScaleFilter::Bilinear);
+
+    if (vp_w == media::BoardRenderer::WIDTH && vp_h == media::BoardRenderer::HEIGHT) {
+        // 1:1 native pixel blit — zero scaling cost!
+        QRect src_rect = dirty_vp.translated(-vp_x, -vp_y);
+        painter.drawImage(dirty_vp.topLeft(), rgb32_buf_, src_rect);
     } else {
-        painter.setRenderHint(QPainter::SmoothPixmapTransform, false);
+        // Partial sub-rectangle scaled blit: only scales the dirty tiles instead of the entire window!
+        double inv_sx = static_cast<double>(media::BoardRenderer::WIDTH) / static_cast<double>(vp_w);
+        double inv_sy = static_cast<double>(media::BoardRenderer::HEIGHT) / static_cast<double>(vp_h);
+
+        QRectF src_f(
+            (dirty_vp.left() - vp_x) * inv_sx,
+            (dirty_vp.top() - vp_y) * inv_sy,
+            dirty_vp.width() * inv_sx,
+            dirty_vp.height() * inv_sy);
+        painter.drawImage(QRectF(dirty_vp), rgb32_buf_, src_f);
     }
-    painter.drawImage(QRect(vp_x, vp_y, vp_w, vp_h), img);
 }
 
 void BoardWidget::mouseMoveEvent(QMouseEvent* event) {
@@ -86,6 +181,10 @@ void BoardWidget::mousePressEvent(QMouseEvent* event) {
     if (btn != 0) {
         on_down_(btn, lx, ly);
     }
+}
+
+void BoardWidget::mouseDoubleClickEvent(QMouseEvent* event) {
+    mousePressEvent(event);
 }
 
 void BoardWidget::leaveEvent(QEvent* /*event*/) {
@@ -129,9 +228,11 @@ MainWindow::MainWindow(media::AssetManager& assets,
             int prev_hc = game_state_.hover_c();
             int prev_hr = game_state_.hover_r();
             game_state_.on_mouse_move(lx, ly);
-            if (game_state_.hover_c() != prev_hc || game_state_.hover_r() != prev_hr) {
+            int new_hc = game_state_.hover_c();
+            int new_hr = game_state_.hover_r();
+            if (new_hc != prev_hc || new_hr != prev_hr) {
                 renderer_.render(game_state_);
-                board_widget_->update();
+                board_widget_->sync_tile_hover_change(prev_hc, prev_hr, new_hc, new_hr);
             }
         },
         [this](int button, float lx, float ly) {
@@ -139,7 +240,7 @@ MainWindow::MainWindow(media::AssetManager& assets,
             game_state_.on_mouse_down(button, lx, ly, now);
             process_game_events(now);
             renderer_.render(game_state_);
-            board_widget_->update();
+            board_widget_->sync_full(false);
         });
 
     build_menus();
@@ -152,9 +253,11 @@ MainWindow::MainWindow(media::AssetManager& assets,
     });
 
     renderer_.render(game_state_);
+    board_widget_->sync_full(false);
 
     tick_timer_ = new QTimer(this);
-    tick_timer_->setInterval(static_cast<int>(core::GameState::kTickIntervalMs)); // 30 ms
+    tick_timer_->setTimerType(Qt::PreciseTimer);
+    tick_timer_->setInterval(16); // 60 Hz precise tick for crisp 200ms link flash & countdown
     connect(tick_timer_, &QTimer::timeout, this, &MainWindow::on_game_tick);
     tick_timer_->start();
 }
@@ -221,7 +324,7 @@ void MainWindow::build_menus() {
 
     menu_settings_->addSeparator();
 
-    // 3b. MIDI 音軌 (101, 102, 103)
+    // 3b. 背景音樂音軌 (101, 102, 103)
     submenu_midi_tracks_ = menu_settings_->addMenu("");
     for (int i = 0; i < 3; ++i) {
         int track_id = 101 + i;
@@ -232,23 +335,33 @@ void MainWindow::build_menus() {
         });
     }
 
-    // 3c. MIDI 播放裝置 (Native OS vs Embedded SoundFont)
+    // 3c. 音樂播放裝置 (Lossless OST vs Native OS MIDI vs Embedded SoundFont + Custom SF2 picker)
     submenu_midi_device_ = menu_settings_->addMenu("");
     group_midi_device_ = new QActionGroup(this);
     group_midi_device_->setExclusive(true);
+    act_midi_ost_ = submenu_midi_device_->addAction("");
+    act_midi_ost_->setCheckable(true);
     act_midi_native_ = submenu_midi_device_->addAction("");
     act_midi_native_->setCheckable(true);
     act_midi_embedded_ = submenu_midi_device_->addAction("");
     act_midi_embedded_->setCheckable(true);
+    group_midi_device_->addAction(act_midi_ost_);
     group_midi_device_->addAction(act_midi_native_);
     group_midi_device_->addAction(act_midi_embedded_);
 
+    submenu_midi_device_->addSeparator();
+    act_select_sf2_ = submenu_midi_device_->addAction("");
+
+    connect(act_midi_ost_, &QAction::triggered, this, [this]() {
+        set_midi_backend(core::MidiBackend::OstAudio);
+    });
     connect(act_midi_native_, &QAction::triggered, this, [this]() {
         set_midi_backend(core::MidiBackend::NativeOS);
     });
     connect(act_midi_embedded_, &QAction::triggered, this, [this]() {
         set_midi_backend(core::MidiBackend::EmbeddedSoundFont);
     });
+    connect(act_select_sf2_, &QAction::triggered, this, &MainWindow::on_select_soundfont);
 
     menu_settings_->addSeparator();
 
@@ -336,8 +449,10 @@ void MainWindow::retranslate_ui() {
     act_midi_tracks_[2]->setText(qtr("menu.settings.track_103"));
 
     submenu_midi_device_->setTitle(qtr("menu.settings.midi_device"));
+    act_midi_ost_->setText(qtr("menu.settings.midi_ost"));
     act_midi_native_->setText(qtr("menu.settings.midi_native"));
     act_midi_embedded_->setText(qtr("menu.settings.midi_embedded"));
+    act_select_sf2_->setText(qtr("menu.settings.select_soundfont"));
 
     submenu_scale_->setTitle(qtr("menu.settings.scale"));
     act_scale_1x_->setText(qtr("menu.settings.scale_1x"));
@@ -374,7 +489,10 @@ void MainWindow::sync_menu_states() {
         act_midi_tracks_[i]->setChecked(config_.is_track_enabled(101 + i));
     }
 
-    if (config_.midi_backend == core::MidiBackend::NativeOS) {
+    act_midi_ost_->setEnabled(audio_.has_ost_available());
+    if (config_.midi_backend == core::MidiBackend::OstAudio && audio_.has_ost_available()) {
+        act_midi_ost_->setChecked(true);
+    } else if (config_.midi_backend == core::MidiBackend::NativeOS) {
         act_midi_native_->setChecked(true);
     } else {
         act_midi_embedded_->setChecked(true);
@@ -416,7 +534,6 @@ void MainWindow::apply_window_scale() {
         int target_w = static_cast<int>(std::lround(core::GameState::kCanvasWidth * factor));
         int target_h = static_cast<int>(std::lround(core::GameState::kCanvasHeight * factor));
         board_widget_->setFixedSize(target_w, target_h);
-        // Unlock main window constraints first, then adjustSize and lock
         setMinimumSize(0, 0);
         setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
         adjustSize();
@@ -436,14 +553,14 @@ void MainWindow::trigger_new_game() {
     game_state_.start_new_game(now);
     sync_menu_states();
     renderer_.render(game_state_);
-    board_widget_->update();
+    board_widget_->sync_full(false);
 }
 
 void MainWindow::trigger_give_up() {
     game_state_.give_up_game();
     sync_menu_states();
     renderer_.render(game_state_);
-    board_widget_->update();
+    board_widget_->sync_full(false);
 }
 
 void MainWindow::set_language(const std::string& lang_code) {
@@ -486,18 +603,18 @@ void MainWindow::on_game_tick() {
     uint64_t now = now_ticks_ms();
     int prev_rem = game_state_.remaining_seconds();
     bool prev_anim = game_state_.animating_link();
+    int prev_tiles = game_state_.board().tiles_left();
 
     game_state_.tick(now);
     audio_.update(config_);
 
-    bool had_events = !game_state_. awaiting_modal();
     process_game_events(now);
 
     if (game_state_.remaining_seconds() != prev_rem ||
         game_state_.animating_link() != prev_anim ||
-        !had_events) {
+        game_state_.board().tiles_left() != prev_tiles) {
         renderer_.render(game_state_);
-        board_widget_->update();
+        board_widget_->sync_full(false);
     }
 }
 
@@ -505,8 +622,18 @@ void MainWindow::process_game_events(uint64_t now_ms) {
     auto events = game_state_.consume_events();
     if (events.empty()) return;
 
+    bool has_modal = false;
+    for (const auto& ev : events) {
+        if (ev.type != core::GameEventType::PlaySfx) {
+            has_modal = true;
+            break;
+        }
+    }
+
+    // Flush the cleared board synchronously BEFORE opening any modal dialog so the
+    // uncovered current stage background (Pic_Level(level_)) is visible behind the popup!
     renderer_.render(game_state_);
-    board_widget_->update();
+    board_widget_->sync_full(has_modal);
 
     for (const auto& ev : events) {
         switch (ev.type) {
@@ -524,7 +651,7 @@ void MainWindow::process_game_events(uint64_t now_ms) {
                 game_state_.acknowledge_modal(now_ticks_ms());
                 sync_menu_states();
                 renderer_.render(game_state_);
-                board_widget_->update();
+                board_widget_->sync_full(false);
                 break;
             }
 
@@ -541,7 +668,7 @@ void MainWindow::process_game_events(uint64_t now_ms) {
                 game_state_.acknowledge_modal(now_ticks_ms());
                 sync_menu_states();
                 renderer_.render(game_state_);
-                board_widget_->update();
+                board_widget_->sync_full(false);
                 break;
             }
 
@@ -553,7 +680,7 @@ void MainWindow::process_game_events(uint64_t now_ms) {
                 game_state_.acknowledge_modal(now_ticks_ms());
                 sync_menu_states();
                 renderer_.render(game_state_);
-                board_widget_->update();
+                board_widget_->sync_full(false);
                 break;
             }
 
@@ -569,7 +696,7 @@ void MainWindow::process_game_events(uint64_t now_ms) {
                 game_state_.acknowledge_modal(now_ticks_ms());
                 sync_menu_states();
                 renderer_.render(game_state_);
-                board_widget_->update();
+                board_widget_->sync_full(false);
                 break;
             }
         }
@@ -629,6 +756,21 @@ void MainWindow::on_export_hst() {
     if (path.isEmpty()) return;
 
     scores_.save_legacy_hst(path.toStdString());
+}
+
+void MainWindow::on_select_soundfont() {
+    QString path = QFileDialog::getOpenFileName(
+        this,
+        QString::fromStdString(i18n_.tr("menu.settings.select_soundfont")),
+        QString::fromStdString(work_dir_.string()),
+        "SoundFont (*.sf2 *.SF2 *.sf3 *.SF3);;All Files (*)");
+    if (path.isEmpty()) return;
+
+    std::string sf_path = path.toStdString();
+    if (audio_.load_soundfont(sf_path)) {
+        config_.soundfont_path = sf_path;
+        set_midi_backend(core::MidiBackend::EmbeddedSoundFont);
+    }
 }
 
 } // namespace llk2::ui::qt

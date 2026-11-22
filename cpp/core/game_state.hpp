@@ -18,7 +18,7 @@ enum class GameEventType {
 struct GameEvent {
     GameEventType type;
     int sfx_id = 0;
-    int next_level_display = 0; // Level + 1 (2..7)
+    int next_level_display = 0; // Level + 2 (2..7)
     int bonus = 0;
     int life_bonus = 0;
     float total_score = 0.0f;
@@ -28,13 +28,16 @@ class GameState {
 public:
     static constexpr int kCanvasWidth = 768;
     static constexpr int kCanvasHeight = 550;
-    static constexpr int kOffX = (kCanvasWidth - 726) / 2;   // 21
+    static constexpr int kOffX = (kCanvasWidth - 726) / 2;      // 21
     static constexpr int kOffY = (kCanvasHeight - 550) / 2 + 6; // 6
     static constexpr float kStageTimeLimitSec = 600.0f;
     static constexpr uint32_t kTickIntervalMs = 30;
     static constexpr uint32_t kLinkFlashDurationMs = 200;
 
     GameState();
+
+    // VB5 Form_Load: Randomize Timer
+    void randomize_from_clock() noexcept;
 
     // VB5 Mem_NewGame_Click + GameLoop initialization
     void start_new_game(uint64_t now_ms);
@@ -87,7 +90,9 @@ public:
 
 private:
     void init_current_stage_board();
+    void process_selection(uint64_t now_ms);
     void complete_matched_pair(uint64_t now_ms);
+    void update_hover_from_last_mouse() noexcept;
 
     Vb5Rng rng_;
     Board board_;
@@ -118,6 +123,8 @@ private:
     int sel2_r_ = -1;
     int hover_c_ = -1;
     int hover_r_ = -1;
+    float last_mouse_x_ = -1.0f;
+    float last_mouse_y_ = -1.0f;
 
     std::vector<GameEvent> events_;
 };

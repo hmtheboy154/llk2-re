@@ -1,6 +1,7 @@
 #include "core/board.hpp"
 #include "core/rng.hpp"
 
+#undef NDEBUG
 #include <cassert>
 #include <cmath>
 #include <cstdio>

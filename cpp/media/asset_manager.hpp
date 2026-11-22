@@ -55,6 +55,9 @@ public:
     std::filesystem::path sfx_path(int sfx_id) const;
     // track_idx = 0..2 -> 101.mid, 102.mid, 103.mid
     std::filesystem::path midi_path(int track_idx) const;
+    // Optional lossless OST audio track (track_idx = 0..2 -> 101.flac/mp3/wav .. 103.flac/mp3/wav)
+    std::filesystem::path ost_path(int track_idx) const;
+    bool has_ost_tracks() const { return has_ost_; }
 
     static bool load_image_file(const std::filesystem::path& path, RgbaSurface& out_surf);
 
@@ -63,8 +66,10 @@ private:
                              const std::string& stem,
                              RgbaSurface& out_surf,
                              std::string* err_out);
+    void discover_ost_tracks(const std::filesystem::path& assets_dir);
 
     bool loaded_ = false;
+    bool has_ost_ = false;
     std::filesystem::path assets_dir_;
 
     RgbaSurface pic_title_;
@@ -77,6 +82,7 @@ private:
     std::filesystem::path icon_path_;
     std::array<std::filesystem::path, 6> sfx_paths_;
     std::array<std::filesystem::path, 3> midi_paths_;
+    std::array<std::filesystem::path, 3> ost_paths_;
 };
 
 } // namespace llk2::media

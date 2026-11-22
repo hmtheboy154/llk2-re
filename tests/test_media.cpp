@@ -4,6 +4,7 @@
 #include "media/audio_engine.hpp"
 #include "media/board_renderer.hpp"
 
+#undef NDEBUG
 #include <cassert>
 #include <cmath>
 #include <cstdio>
@@ -87,7 +88,7 @@ static void test_renderer_and_audio_with_assets(const std::filesystem::path& ass
 
     gs.on_mouse_down(1, 21.0f + c1 * 40 + 10, 6.0f + r1 * 50 + 10, 1010);
     gs.on_mouse_down(1, 21.0f + c2 * 40 + 10, 6.0f + r2 * 50 + 10, 1020);
-    gs.tick(1030);
+    // Immediate 0ms evaluation inside on_mouse_down (no need to wait for 30ms tick!)
     assert(gs.animating_link());
     renderer.render(gs);
 
@@ -116,6 +117,9 @@ static void test_renderer_and_audio_with_assets(const std::filesystem::path& ass
     AudioEngine audio;
     assert(audio.init(assets, cfg, &err));
     assert(audio.is_initialized());
+    std::printf("[info] Active SoundFont: %s | OST Available: %s\n",
+                audio.active_soundfont_name().c_str(),
+                audio.has_ost_available() ? "YES" : "NO");
     assert(audio.current_midi_track() == 0); // 101.mid started automatically!
 
     // Mix 4096 frames of embedded MIDI + SFX 203.wav
@@ -137,6 +141,20 @@ static void test_renderer_and_audio_with_assets(const std::filesystem::path& ass
     cfg.midi_backend = MidiBackend::NativeOS;
     audio.update(cfg);
     assert(audio.current_midi_track() == 1);
+
+    // If lossless OST tracks are available, test streaming FLAC OST audio!
+    if (audio.has_ost_available()) {
+        cfg.midi_backend = MidiBackend::OstAudio;
+        audio.update(cfg);
+        assert(audio.current_midi_track() == 1);
+        std::vector<float> ost_pcm(4096 * 2, 0.0f);
+        audio.mix_audio_frames(ost_pcm.data(), 4096);
+        float ost_amp = 0.0f;
+        for (float s : ost_pcm) {
+            ost_amp = std::max(ost_amp, std::fabs(s));
+        }
+        assert(ost_amp > 0.0001f);
+    }
 
     cfg.midi_backend = MidiBackend::EmbeddedSoundFont;
     audio.update(cfg);

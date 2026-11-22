@@ -251,7 +251,40 @@ def _convert_to_bmp(src_path, dst_path):
         return False
 
 
-def extract_all(exe_path, out_dir=None, make_bmp=False, skip_hash=False):
+def _copy_ost_tracks(ost_dir, assets_dir):
+    """Copy lossless OST tracks 01..03 (.flac/.wav/.mp3) into <assets_dir>/ost/{101..103}.<ext>."""
+    import shutil
+    if not ost_dir or not os.path.isdir(ost_dir):
+        return 0
+    sub_cand = os.path.join(ost_dir, '上海步天软件有限公司 - KAWAI连连看OST')
+    if os.path.isdir(sub_cand):
+        ost_dir = sub_cand
+    dst_ost = os.path.join(assets_dir, 'ost')
+    if not os.path.isdir(dst_ost):
+        os.makedirs(dst_ost)
+    copied = 0
+    entries = sorted(os.listdir(ost_dir))
+    for idx, prefix in enumerate(('01.', '02.', '03.')):
+        track_id = 101 + idx
+        chosen = None
+        for ext in ('.flac', '.FLAC', '.wav', '.WAV', '.mp3', '.MP3'):
+            for name in entries:
+                if name.startswith(prefix) and name.endswith(ext):
+                    chosen = os.path.join(ost_dir, name)
+                    break
+            if chosen:
+                break
+        if chosen:
+            ext = os.path.splitext(chosen)[1].lower()
+            dst_path = os.path.join(dst_ost, '%d%s' % (track_id, ext))
+            shutil.copy2(chosen, dst_path)
+            copied += 1
+    if copied:
+        print('[extract] Copied %d OST tracks into %s' % (copied, dst_ost))
+    return copied
+
+
+def extract_all(exe_path, out_dir=None, make_bmp=False, skip_hash=False, ost_dir=None):
     """Extract images, icon, SFX WAVs, and MIDIs from <exe_path>."""
     with open(exe_path, 'rb') as f:
         raw = f.read()
@@ -347,6 +380,10 @@ def extract_all(exe_path, out_dir=None, make_bmp=False, skip_hash=False):
             converted += 1
         print('[extract] Converted %d images to 24-bit BMP' % converted)
 
+    # 4. Optional OST tracks copy (--ost <ost_dir>)
+    if ost_dir:
+        _copy_ost_tracks(ost_dir, assets_dir)
+
 
 def main(argv=None):
     if argv is None:
@@ -354,12 +391,13 @@ def main(argv=None):
     if not argv or argv[0] in ('-h', '--help'):
         print(
             'Usage: python3 tools/extract_assets.py <D4s.exe|lianliankan2.ExE> '
-            '[-o|--out <assets_dir>] [--bmp] [--skip-hash]'
+            '[-o|--out <assets_dir>] [--ost <ost_dir>] [--bmp] [--skip-hash]'
         )
         return 0 if argv else 1
 
     exe_path = None
     out_dir = None
+    ost_dir = None
     make_bmp = False
     skip_hash = False
 
@@ -368,6 +406,9 @@ def main(argv=None):
         a = argv[i]
         if a in ('-o', '--out') and i + 1 < len(argv):
             out_dir = argv[i + 1]
+            i += 2
+        elif a == '--ost' and i + 1 < len(argv):
+            ost_dir = argv[i + 1]
             i += 2
         elif a == '--bmp':
             make_bmp = True
@@ -396,6 +437,7 @@ def main(argv=None):
         out_dir=out_dir,
         make_bmp=make_bmp,
         skip_hash=skip_hash,
+        ost_dir=ost_dir,
     )
     return 0
 
