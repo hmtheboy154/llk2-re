@@ -20,11 +20,14 @@ public:
     }
 
     // Equivalent to VB5 `Int(Rnd() * upper_bound)`.
+    // Note: VB5 computes `fmul` on the x87 80-bit FPU stack before `__vbaR8IntI2` / `__vbaFPInt`.
+    // Multiplying in IEEE-754 double (53-bit mantissa) is exact for 24-bit seed * int upper_bound
+    // and avoids the 52/2^24 float32 rounding mismatches at upper_bound=143.
     int next_int(int upper_bound) noexcept {
         if (upper_bound <= 0) {
             return 0;
         }
-        float v = next_float() * static_cast<float>(upper_bound);
+        double v = static_cast<double>(next_float()) * static_cast<double>(upper_bound);
         int r = static_cast<int>(std::floor(v));
         if (r >= upper_bound) {
             r = upper_bound - 1;

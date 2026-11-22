@@ -162,7 +162,32 @@ static void test_has_valid_move_and_shuffle() {
     assert(b.cell(3, 2).match_id == 34);
 }
 
+static void test_vb5_rng_parity() {
+    // Microsoft KB 231847 exact VB5/VB6 Rnd() default sequence from initial seed 0x050000
+    Vb5Rng rng;
+    assert(rng.state() == 0x00050000u);
+    const float expected[5] = {0.7055475f, 0.5334240f, 0.5795186f, 0.2895625f, 0.3019480f};
+    for (int i = 0; i < 5; ++i) {
+        float v = rng.next_float();
+        assert(std::fabs(v - expected[i]) < 1e-6f);
+    }
+
+    // x87 80-bit vs float32 boundary test vector:
+    // state 0x21e8b0 -> next state 0x1ca4b3 -> (0x1ca4b3 / 2^24) * 143 = 15.999999821186...
+    // Exact x87 floor is 15 (whereas float32 multiplication rounds up to 16).
+    Vb5Rng edge(0x21e8b0u);
+    int k = edge.next_int(143);
+    assert(edge.state() == 0x1ca4b3u);
+    assert(k == 15);
+
+    // rtcRandomize preserves low 8 bits of state and replaces bits 8..23 from double hi32
+    Vb5Rng r2(0x000500ABu);
+    r2.randomize(12345.5);
+    assert((r2.state() & 0xFFu) == 0xABu);
+}
+
 int main() {
+    test_vb5_rng_parity();
     test_init_board_distribution();
     test_checklink0_vertical_and_uturn();
     test_checklink1_horizontal_and_uturn();

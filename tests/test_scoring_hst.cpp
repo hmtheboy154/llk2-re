@@ -169,6 +169,40 @@ static void test_gamestate_progression() {
     assert(gs.level() == 1);
     assert(gs.board_active());
     assert(gs.board().tiles_left() == 144);
+
+    // Rapid-click fast-forward guard on Level 1 (ShiftUp):
+    // Set up col 3 with tiles (3,1) & (3,2) matching, and (3,3) = tile_id 5 that shifts up to (3,1);
+    // plus col 4 at (4,1) = tile_id 5 (already at top, untouched by ShiftUp) and col 10 at (10,1)/(10,2).
+    gs.board().clear_all();
+    gs.board().cell(3, 1) = {true, 1, 1};
+    gs.board().cell(3, 2) = {true, 1, 1};
+    gs.board().cell(3, 3) = {true, 5, 5};
+    gs.board().cell(4, 1) = {true, 5, 5};
+    gs.board().cell(10, 1) = {true, 7, 7};
+    gs.board().cell(10, 2) = {true, 7, 7};
+    gs.board().set_tiles_left(6);
+
+    // Match (3,1) and (3,2) -> enters animating_link()
+    gs.on_mouse_down(1, 21.0f + 3 * 40 + 10, 6.0f + 1 * 50 + 10, 2400);
+    gs.on_mouse_down(1, 21.0f + 3 * 40 + 10, 6.0f + 2 * 50 + 10, 2410);
+    assert(gs.animating_link());
+
+    // Click (3,3) during the 200ms flash: ShiftUp moves (3,3) to (3,1), vacating (3,3).
+    // Fast-forward must complete the match & shift WITHOUT selecting anything at (3,3)!
+    gs.on_mouse_down(1, 21.0f + 3 * 40 + 10, 6.0f + 3 * 50 + 10, 2450);
+    assert(!gs.animating_link());
+    assert(gs.board().cell(3, 1).occupied && gs.board().cell(3, 1).tile_id == 5);
+    assert(!gs.board().cell(3, 3).occupied);
+    assert(gs.sel1_c() < 0);
+
+    // Match (10,1) and (10,2), then rapid-click untouched tile (4,1) during 200ms flash ->
+    // since (4,1) did NOT move during ShiftUp, it SHOULD select immediately!
+    gs.on_mouse_down(1, 21.0f + 10 * 40 + 10, 6.0f + 1 * 50 + 10, 2500);
+    gs.on_mouse_down(1, 21.0f + 10 * 40 + 10, 6.0f + 2 * 50 + 10, 2510);
+    assert(gs.animating_link());
+    gs.on_mouse_down(1, 21.0f + 4 * 40 + 10, 6.0f + 1 * 50 + 10, 2550);
+    assert(!gs.animating_link());
+    assert(gs.sel1_c() == 4 && gs.sel1_r() == 1);
 }
 
 int main() {

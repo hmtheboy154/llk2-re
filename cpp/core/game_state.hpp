@@ -91,7 +91,8 @@ public:
 private:
     void init_current_stage_board();
     void process_selection(uint64_t now_ms);
-    void complete_matched_pair(uint64_t now_ms);
+    // Returns true if completing the pair triggered a deadlock shuffle.
+    bool complete_matched_pair(uint64_t now_ms);
     void update_hover_from_last_mouse() noexcept;
 
     Vb5Rng rng_;

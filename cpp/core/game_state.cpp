@@ -102,11 +102,39 @@ void GameState::on_mouse_down(int button, float x, float y, uint64_t now_ms) {
     }
 
     // If the user clicks while a previous pair's 200ms lightning flash is still showing,
-    // immediately finish removing that pair so rapid clicking never drops inputs.
+    // immediately finish removing that pair so rapid clicking never drops inputs — EXCEPT
+    // if a deadlock shuffle or level gravity shift altered the clicked tile under the cursor!
     if (animating_link_) {
-        complete_matched_pair(now_ms);
-        if (!board_active_ || in_title_screen_ || awaiting_modal_) {
+        int pre_col = -1;
+        int pre_row = -1;
+        BoardCell pre_cell{};
+        if (button == 1) {
+            float dx = x - static_cast<float>(kOffX);
+            float dy = y - static_cast<float>(kOffY);
+            if (dx > 0.0f && dx < 720.0f && dy > 0.0f && dy < 550.0f) {
+                int c = static_cast<int>(dx) / 40;
+                int r = static_cast<int>(dy) / 50;
+                if (c >= 0 && c < Board::kCols && r >= 0 && r < Board::kRows) {
+                    pre_col = c;
+                    pre_row = r;
+                    pre_cell = board_.cell(c, r);
+                }
+            }
+        }
+
+        bool did_deadlock_shuffle = complete_matched_pair(now_ms);
+        if (!board_active_ || in_title_screen_ || awaiting_modal_ || did_deadlock_shuffle) {
+            update_hover_from_last_mouse();
             return;
+        }
+        if (button == 1 && pre_col >= 0 && pre_row >= 0) {
+            const BoardCell& post_cell = board_.cell(pre_col, pre_row);
+            if (!pre_cell.occupied || !post_cell.occupied ||
+                post_cell.tile_id != pre_cell.tile_id || post_cell.match_id != pre_cell.match_id) {
+                // Gravity shift moved a different tile under the cursor; don't mis-select it.
+                update_hover_from_last_mouse();
+                return;
+            }
         }
     }
 
@@ -173,8 +201,9 @@ void GameState::process_selection(uint64_t now_ms) {
     }
 }
 
-void GameState::complete_matched_pair(uint64_t now_ms) {
+bool GameState::complete_matched_pair(uint64_t now_ms) {
     animating_link_ = false;
+    bool did_deadlock_shuffle = false;
     board_.cell(pending_c1_, pending_r1_).occupied = false;
     board_.cell(pending_c2_, pending_r2_).occupied = false;
 
@@ -220,6 +249,7 @@ void GameState::complete_matched_pair(uint64_t now_ms) {
             do {
                 board_.shuffle_remaining(rng_);
             } while (!board_.has_valid_move());
+            did_deadlock_shuffle = true;
             update_hover_from_last_mouse();
         } else {
             awaiting_modal_ = true;
@@ -232,6 +262,7 @@ void GameState::complete_matched_pair(uint64_t now_ms) {
         }
     }
     last_wall_ms_ = now_ms;
+    return did_deadlock_shuffle;
 }
 
 void GameState::tick(uint64_t now_ms) {
