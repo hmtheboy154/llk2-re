@@ -107,7 +107,7 @@ int main(int argc, char* argv[]) {
             win.set_midi_backend(llk2::core::MidiBackend::EmbeddedSoundFont);
             win.set_midi_track_enabled(101, true);
 
-            // 5. Instantiate and render TableDialog, ExplainDialog, AuthorDialog
+            // 5. Instantiate and render TableDialog, ExplainDialog, AuthorDialog, and F12 Inspector
             llk2::ui::qt::TableDialog table_dlg(scores, i18n, 0, "Tester", &win);
             table_dlg.show();
             table_dlg.close();
@@ -119,6 +119,11 @@ int main(int argc, char* argv[]) {
             llk2::ui::qt::ImageSplashDialog author_dlg(assets.form_author(), "Author", &win);
             author_dlg.show();
             author_dlg.close();
+
+            win.set_inspector_visible(true);
+            win.set_hint_highlight(true);
+            win.set_hint_highlight(false);
+            win.set_inspector_visible(false);
 
             // 6. Test matching a pair on the board
             int c1 = static_cast<int>(std::lround(gs.board().hint_x1()));

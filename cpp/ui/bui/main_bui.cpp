@@ -15,6 +15,7 @@ int main(int argc, char* argv[]) {
     std::filesystem::path work_dir = std::filesystem::current_path();
     std::filesystem::path custom_assets_dir;
     std::filesystem::path screenshot_path;
+    std::filesystem::path inspector_screenshot_path;
     bool smoke_test = false;
 
     for (int i = 1; i < argc; ++i) {
@@ -25,6 +26,8 @@ int main(int argc, char* argv[]) {
             smoke_test = true;
         } else if (arg == "--screenshot" && i + 1 < argc) {
             screenshot_path = argv[++i];
+        } else if (arg == "--inspector-screenshot" && i + 1 < argc) {
+            inspector_screenshot_path = argv[++i];
         }
     }
 
@@ -129,7 +132,18 @@ int main(int argc, char* argv[]) {
         app.set_midi_backend(llk2::core::MidiBackend::EmbeddedSoundFont);
         app.set_midi_track_enabled(101, true);
 
-        // 7. Test matching a pair via hint coordinates
+        // 7. Test F12 Inspector + Board Hint Pair highlight
+        app.set_inspector_visible(true);
+        app.set_hint_highlight(true);
+        app.render_headless_frame();
+        if (!app.render_inspector_headless_frame(inspector_screenshot_path)) {
+            std::fprintf(stderr, "[FAIL] llk2-bui smoke_test: inspector headless render failed\n");
+            app.shutdown();
+            audio.shutdown();
+            return 6;
+        }
+
+        // 8. Test matching a pair via hint coordinates
         int c1 = static_cast<int>(std::lround(gs.board().hint_x1()));
         int r1 = static_cast<int>(std::lround(gs.board().hint_y1()));
         int c2 = static_cast<int>(std::lround(gs.board().hint_x2()));
@@ -139,7 +153,7 @@ int main(int argc, char* argv[]) {
         gs.on_mouse_down(1, 21.0f + c2 * 40 + 10, 6.0f + r2 * 50 + 10, t + 10);
         app.render_headless_frame();
 
-        // 8. Regression test: open Explain & Author modals and simulate clicking directly on
+        // 9. Regression test: open Explain & Author modals and simulate clicking directly on
         // the image/modal (must NOT segfault and must close cleanly via deferred frame action!)
         app.open_explain_modal();
         app.render_headless_frame(screenshot_path);
@@ -166,6 +180,8 @@ int main(int argc, char* argv[]) {
         app.open_records_modal(-1);
         app.render_headless_frame();
         app.close_active_modal();
+        app.set_hint_highlight(false);
+        app.set_inspector_visible(false);
 
         app.trigger_give_up();
         app.render_headless_frame();

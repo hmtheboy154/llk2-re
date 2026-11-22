@@ -1,13 +1,17 @@
 #include "ui/qt/main_window.hpp"
+#include "ui/common/ui_helpers.hpp"
 #include "ui/qt/image_dialogs.hpp"
+#include "ui/qt/inspector_dialog.hpp"
 #include "ui/qt/table_dialog.hpp"
 
 #include <QApplication>
 #include <QFileDialog>
 #include <QIcon>
+#include <QKeySequence>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPainter>
+#include <QPen>
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -30,6 +34,20 @@ BoardWidget::BoardWidget(media::BoardRenderer& renderer, const core::Config& con
 void BoardWidget::set_callbacks(MouseMoveCallback on_move, MouseDownCallback on_down) {
     on_move_ = std::move(on_move);
     on_down_ = std::move(on_down);
+}
+
+void BoardWidget::set_hint_overlay(bool enabled, int c1, int r1, int c2, int r2) {
+    if (hint_enabled_ == enabled &&
+        hint_c1_ == c1 && hint_r1_ == r1 &&
+        hint_c2_ == c2 && hint_r2_ == r2) {
+        return;
+    }
+    hint_enabled_ = enabled;
+    hint_c1_ = c1;
+    hint_r1_ = r1;
+    hint_c2_ = c2;
+    hint_r2_ = r2;
+    update();
 }
 
 void BoardWidget::copy_rgba_rect_to_rgb32(int rx, int ry, int rw, int rh) {
@@ -155,6 +173,25 @@ void BoardWidget::paintEvent(QPaintEvent* event) {
             dirty_vp.height() * inv_sy);
         painter.drawImage(QRectF(dirty_vp), rgb32_buf_, src_f);
     }
+
+    if (hint_enabled_ && hint_c1_ >= 1 && hint_r1_ >= 1 && hint_c2_ >= 1 && hint_r2_ >= 1) {
+        double sx = static_cast<double>(vp_w) / static_cast<double>(media::BoardRenderer::WIDTH);
+        double sy = static_cast<double>(vp_h) / static_cast<double>(media::BoardRenderer::HEIGHT);
+        QPen pen(QColor(255, 220, 40, 240));
+        pen.setWidthF(3.0);
+        pen.setJoinStyle(Qt::MiterJoin);
+        painter.setPen(pen);
+        painter.setBrush(Qt::NoBrush);
+        auto draw_box = [&](int c, int r) {
+            double x0 = vp_x + (core::GameState::kOffX + c * media::BoardRenderer::TILE_W) * sx;
+            double y0 = vp_y + (core::GameState::kOffY + r * media::BoardRenderer::TILE_H) * sy;
+            double w = media::BoardRenderer::TILE_W * sx;
+            double h = media::BoardRenderer::TILE_H * sy;
+            painter.drawRect(QRectF(x0 + 1.5, y0 + 1.5, std::max(1.0, w - 3.0), std::max(1.0, h - 3.0)));
+        };
+        draw_box(hint_c1_, hint_r1_);
+        draw_box(hint_c2_, hint_r2_);
+    }
 }
 
 void BoardWidget::mouseMoveEvent(QMouseEvent* event) {
@@ -241,12 +278,27 @@ MainWindow::MainWindow(media::AssetManager& assets,
             process_game_events(now);
             renderer_.render(game_state_);
             board_widget_->sync_full(false);
+            refresh_inspector_and_hint();
+        });
+
+    inspector_dlg_ = new InspectorDialog(i18n_, this);
+    inspector_dlg_->set_callbacks(
+        [this](bool enabled) {
+            set_hint_highlight(enabled);
+        },
+        [this]() {
+            if (act_inspector_) {
+                act_inspector_->blockSignals(true);
+                act_inspector_->setChecked(false);
+                act_inspector_->blockSignals(false);
+            }
         });
 
     build_menus();
     retranslate_ui();
     sync_menu_states();
     apply_window_scale();
+    refresh_inspector_and_hint();
 
     i18n_.add_change_listener([this](const std::string& /*new_lang*/) {
         retranslate_ui();
@@ -414,6 +466,16 @@ void MainWindow::build_menus() {
     connect(act_import_hst_, &QAction::triggered, this, &MainWindow::on_import_hst);
     connect(act_export_hst_, &QAction::triggered, this, &MainWindow::on_export_hst);
 
+    menu_settings_->addSeparator();
+
+    // 3f. Inspector / Hint Assistant (F12)
+    act_inspector_ = menu_settings_->addAction("");
+    act_inspector_->setCheckable(true);
+    act_inspector_->setShortcut(QKeySequence(Qt::Key_F12));
+    connect(act_inspector_, &QAction::toggled, this, [this](bool checked) {
+        set_inspector_visible(checked);
+    });
+
     // 4. 關於(&A)
     act_explain_ = menu_about_->addAction("");
     act_author_ = menu_about_->addAction("");
@@ -465,10 +527,16 @@ void MainWindow::retranslate_ui() {
 
     act_import_hst_->setText(qtr("menu.settings.import_hst"));
     act_export_hst_->setText(qtr("menu.settings.export_hst"));
+    act_inspector_->setText(qtr("menu.settings.inspector"));
 
     menu_about_->setTitle(qtr("menu.about"));
     act_explain_->setText(qtr("menu.about.explain"));
     act_author_->setText(qtr("menu.about.author"));
+
+    if (inspector_dlg_) {
+        inspector_dlg_->retranslate();
+        refresh_inspector_and_hint();
+    }
 }
 
 void MainWindow::sync_menu_states() {
@@ -554,6 +622,7 @@ void MainWindow::trigger_new_game() {
     sync_menu_states();
     renderer_.render(game_state_);
     board_widget_->sync_full(false);
+    refresh_inspector_and_hint();
 }
 
 void MainWindow::trigger_give_up() {
@@ -561,6 +630,7 @@ void MainWindow::trigger_give_up() {
     sync_menu_states();
     renderer_.render(game_state_);
     board_widget_->sync_full(false);
+    refresh_inspector_and_hint();
 }
 
 void MainWindow::set_language(const std::string& lang_code) {
@@ -590,6 +660,7 @@ void MainWindow::set_midi_backend(core::MidiBackend backend) {
     sync_menu_states();
     audio_.update(config_);
     save_config_and_scores();
+    refresh_inspector_and_hint();
 }
 
 void MainWindow::set_midi_track_enabled(int track_id, bool enabled) {
@@ -597,6 +668,43 @@ void MainWindow::set_midi_track_enabled(int track_id, bool enabled) {
     sync_menu_states();
     audio_.update(config_);
     save_config_and_scores();
+    refresh_inspector_and_hint();
+}
+
+void MainWindow::set_inspector_visible(bool visible) {
+    if (!inspector_dlg_) return;
+    if (act_inspector_) {
+        act_inspector_->blockSignals(true);
+        act_inspector_->setChecked(visible);
+        act_inspector_->blockSignals(false);
+    }
+    if (visible) {
+        refresh_inspector_and_hint();
+        inspector_dlg_->show();
+        inspector_dlg_->raise();
+    } else {
+        inspector_dlg_->hide();
+    }
+}
+
+void MainWindow::set_hint_highlight(bool enabled) {
+    show_hint_overlay_ = enabled;
+    if (inspector_dlg_ && inspector_dlg_->hint_highlight_enabled() != enabled) {
+        inspector_dlg_->set_hint_highlight_enabled(enabled);
+    }
+    refresh_inspector_and_hint();
+}
+
+void MainWindow::refresh_inspector_and_hint() {
+    auto snap = common::build_inspector_snapshot(game_state_, audio_, config_, i18n_);
+    if (board_widget_) {
+        board_widget_->set_hint_overlay(
+            show_hint_overlay_ && snap.has_valid_hint,
+            snap.hint_c1, snap.hint_r1, snap.hint_c2, snap.hint_r2);
+    }
+    if (inspector_dlg_ && inspector_dlg_->isVisible()) {
+        inspector_dlg_->refresh(game_state_, audio_, config_);
+    }
 }
 
 void MainWindow::on_game_tick() {
@@ -615,6 +723,9 @@ void MainWindow::on_game_tick() {
         game_state_.board().tiles_left() != prev_tiles) {
         renderer_.render(game_state_);
         board_widget_->sync_full(false);
+        refresh_inspector_and_hint();
+    } else if (inspector_dlg_ && inspector_dlg_->isVisible()) {
+        inspector_dlg_->refresh(game_state_, audio_, config_);
     }
 }
 
@@ -701,6 +812,7 @@ void MainWindow::process_game_events(uint64_t now_ms) {
             }
         }
     }
+    refresh_inspector_and_hint();
     (void)now_ms;
 }
 

@@ -39,6 +39,7 @@ public:
 
     // Headless render step into an offscreen BuiRaster (works with zero display server).
     bool render_headless_frame(const std::filesystem::path& screenshot_png = {});
+    bool render_inspector_headless_frame(const std::filesystem::path& screenshot_png = {});
 
     // Simulates a left-button click inside the main context (for smoke-test regression coverage).
     void simulate_click(int x, int y);
@@ -52,6 +53,8 @@ public:
     void set_midi_backend(core::MidiBackend backend);
     void set_midi_track_enabled(int track_id, bool enabled);
     void set_blender_theme(const std::string& theme_name);
+    void set_inspector_visible(bool visible);
+    void set_hint_highlight(bool enabled);
 
     void open_records_modal(int editable_rank = -1);
     void open_explain_modal();
@@ -64,6 +67,7 @@ public:
     std::string current_title() const { return current_title_; }
     std::string current_theme() const { return current_theme_; }
     bool is_modal_open() const noexcept { return active_modal_ != ModalKind::None; }
+    bool is_inspector_visible() const noexcept { return show_inspector_; }
 
 private:
     enum class MenuAction : uintptr_t {
@@ -94,6 +98,7 @@ private:
         ThemeLight,
         ImportHst,
         ExportHst,
+        ToggleInspector,
         ShowExplain,
         ShowAuthor
     };
@@ -112,12 +117,17 @@ private:
         AcceptRecordsModal,
         OpenExplain,
         OpenAuthor,
-        OpenRecords
+        OpenRecords,
+        ToggleInspector,
+        CloseInspector
     };
 
     void setup_cjk_font();
     void apply_cjk_font();
     void build_ui_tree();
+    void build_inspector_tree();
+    void destroy_inspector_window();
+    void refresh_inspector_ui(bool force = false);
     void rebuild_menus();
     void update_window_title();
     void apply_window_scale();
@@ -143,11 +153,13 @@ private:
 
     // Static C callbacks bridged into BUI
     static void on_host_emit(void* data, BKNode* node, int kind, void* ref, double a, double b);
+    static void on_inspector_emit(void* data, BKNode* node, int kind, void* ref, double a, double b);
     static int on_board_event(void* data, BKNode* node, const BKCustomEvent* e);
     static void on_board_draw(void* data, BKNode* node, BuiRaster* r, const int rect[4]);
     static void on_window_frame(void* data, BKWindow* win);
     static void on_window_timer(void* data, BKWindow* win, int id);
     static int on_window_close(void* data, BKWindow* win);
+    static int on_inspector_close(void* data, BKWindow* win);
 
     media::AssetManager& assets_;
     media::AudioEngine& audio_;
@@ -183,6 +195,26 @@ private:
     BKContext* ctx_ = nullptr;
     BKWindow* window_ = nullptr;
     BuiRaster* headless_raster_ = nullptr;
+
+    // Non-modal F12 Inspector window & tree
+    bool show_inspector_ = false;
+    bool show_hint_overlay_ = false;
+    BKNode* insp_root_ = nullptr;
+    BKNode* insp_lbl_mode_ = nullptr;
+    BKNode* insp_lbl_stage_ = nullptr;
+    BKNode* insp_lbl_tiles_ = nullptr;
+    BKNode* insp_lbl_lives_score_ = nullptr;
+    BKNode* insp_lbl_time_ = nullptr;
+    BKNode* insp_lbl_backend_ = nullptr;
+    BKNode* insp_lbl_sf2_ = nullptr;
+    BKNode* insp_lbl_track_ = nullptr;
+    BKNode* insp_lbl_hint_ = nullptr;
+    BKNode* insp_chk_hint_ = nullptr;
+    BKNode* insp_btn_close_ = nullptr;
+    BKContext* insp_ctx_ = nullptr;
+    BKWindow* insp_win_ = nullptr;
+    BuiRaster* insp_headless_raster_ = nullptr;
+    std::string last_insp_lines_[9];
 
     int board_tex_ = 0;
     bool board_dirty_ = true;

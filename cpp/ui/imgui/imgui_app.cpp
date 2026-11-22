@@ -572,7 +572,9 @@ void ImGuiApp::handle_sdl_event(const SDL_Event& ev, bool& want_quit) {
 
         case SDL_EVENT_KEY_DOWN:
             if (!ev.key.repeat) {
-                if (ev.key.key == SDLK_F2 && game_state_.in_title_screen() && !modal_blocking) {
+                if (ev.key.key == SDLK_F12) {
+                    show_inspector_ = !show_inspector_;
+                } else if (ev.key.key == SDLK_F2 && game_state_.in_title_screen() && !modal_blocking) {
                     trigger_new_game();
                 }
             }
@@ -632,7 +634,9 @@ void ImGuiApp::handle_sdl_event(const SDL_Event& ev, bool& want_quit) {
 
         case SDL_KEYDOWN:
             if (!ev.key.repeat) {
-                if (ev.key.keysym.sym == SDLK_F2 && game_state_.in_title_screen() && !modal_blocking) {
+                if (ev.key.keysym.sym == SDLK_F12) {
+                    show_inspector_ = !show_inspector_;
+                } else if (ev.key.keysym.sym == SDLK_F2 && game_state_.in_title_screen() && !modal_blocking) {
                     trigger_new_game();
                 }
             }
@@ -927,6 +931,10 @@ void ImGuiApp::draw_menu_bar() {
         if (ImGui::MenuItem((i18n_.tr("menu.settings.export_hst") + "###act_export").c_str())) {
             request_file_dialog(FileDialogAction::ExportHst);
         }
+
+        ImGui::Separator();
+        std::string insp_lbl = i18n_.tr("menu.settings.inspector") + "###act_inspector";
+        ImGui::MenuItem(insp_lbl.c_str(), "F12", &show_inspector_);
 
         ImGui::EndMenu();
     }
@@ -1224,6 +1232,68 @@ void ImGuiApp::draw_path_fallback_modal() {
     }
 }
 
+void ImGuiApp::draw_inspector() {
+    if (!show_inspector_) return;
+
+    auto snap = common::build_inspector_snapshot(game_state_, audio_, config_, i18n_);
+    std::string title = i18n_.tr("inspector.title") + "###llk2_inspector";
+
+    ImGui::SetNextWindowSize(ImVec2(330.0f, 0.0f), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin(title.c_str(), &show_inspector_, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("%s: %s", i18n_.tr("inspector.mode").c_str(), snap.mode.c_str());
+        ImGui::Text("%s: %s", i18n_.tr("inspector.stage").c_str(), snap.stage.c_str());
+        ImGui::Text("%s: %s", i18n_.tr("inspector.tiles_left").c_str(), snap.tiles_left.c_str());
+        ImGui::TextUnformatted(snap.lives_score.c_str());
+        ImGui::Text("%s: %s", i18n_.tr("inspector.time_left").c_str(), snap.time_left.c_str());
+        ImGui::Separator();
+        ImGui::Text("%s: %s", i18n_.tr("inspector.audio_backend").c_str(), snap.audio_backend.c_str());
+        ImGui::Text("%s: %s", i18n_.tr("inspector.soundfont").c_str(), snap.soundfont.c_str());
+        ImGui::Text("%s: %s", i18n_.tr("inspector.track").c_str(), snap.track.c_str());
+        ImGui::Separator();
+        ImGui::Text("%s: %s", i18n_.tr("inspector.next_hint").c_str(), snap.next_hint.c_str());
+        ImGui::Checkbox((i18n_.tr("inspector.highlight_hint") + "###chk_hint").c_str(), &show_hint_overlay_);
+    }
+    ImGui::End();
+}
+
+void ImGuiApp::draw_hint_overlay() {
+    if (!show_hint_overlay_ || !game_state_.board_active() || game_state_.in_title_screen()) {
+        return;
+    }
+    int c1 = static_cast<int>(std::lround(game_state_.board().hint_x1()));
+    int r1 = static_cast<int>(std::lround(game_state_.board().hint_y1()));
+    int c2 = static_cast<int>(std::lround(game_state_.board().hint_x2()));
+    int r2 = static_cast<int>(std::lround(game_state_.board().hint_y2()));
+    if (!game_state_.board().cell(c1, r1).occupied || !game_state_.board().cell(c2, r2).occupied) {
+        return;
+    }
+
+    int vx = 0, vy = 0, vw = 0, vh = 0;
+    float sx = 1.0f, sy = 1.0f;
+    compute_viewport_pixels(vx, vy, vw, vh, sx, sy);
+    if (vw <= 0 || vh <= 0) return;
+
+    // Convert viewport pixel rect back to ImGui logical display coordinates
+    float lvx = static_cast<float>(vx) / sx;
+    float lvy = static_cast<float>(vy) / sy;
+    float lvw = static_cast<float>(vw) / sx;
+    float lvh = static_cast<float>(vh) / sy;
+
+    float scale_x = lvw / static_cast<float>(core::GameState::kCanvasWidth);
+    float scale_y = lvh / static_cast<float>(core::GameState::kCanvasHeight);
+
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();
+    auto draw_tile_box = [&](int c, int r) {
+        float x0 = lvx + (static_cast<float>(core::GameState::kOffX + c * media::BoardRenderer::TILE_W)) * scale_x;
+        float y0 = lvy + (static_cast<float>(core::GameState::kOffY + r * media::BoardRenderer::TILE_H)) * scale_y;
+        float x1 = x0 + 40.0f * scale_x;
+        float y1 = y0 + 50.0f * scale_y;
+        dl->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), IM_COL32(255, 220, 40, 240), 2.0f, 0, 3.0f);
+    };
+    draw_tile_box(c1, r1);
+    draw_tile_box(c2, r2);
+}
+
 void ImGuiApp::draw_modals() {
     draw_game_event_modal();
     draw_records_modal();
@@ -1253,6 +1323,8 @@ void ImGuiApp::render_frame() {
     ImGui::NewFrame();
 
     draw_menu_bar();
+    draw_hint_overlay();
+    draw_inspector();
     draw_modals();
 
     ImGui::Render();
@@ -1319,7 +1391,7 @@ int ImGuiApp::run() {
     while (!want_quit && !request_quit_) {
         SDL_Event ev;
         // Event-driven low-CPU wait: 16 ms during active play/animation, 50 ms when idle on title screen.
-        int wait_ms = (!game_state_.in_title_screen() || game_state_.animating_link()) ? 16 : 50;
+        int wait_ms = (!game_state_.in_title_screen() || game_state_.animating_link() || show_inspector_) ? 16 : 50;
         if (SDL_WaitEventTimeout(&ev, wait_ms)) {
             handle_sdl_event(ev, want_quit);
             while (SDL_PollEvent(&ev)) {

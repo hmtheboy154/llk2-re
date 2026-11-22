@@ -54,6 +54,7 @@ public:
     void open_records_modal(int editable_rank = -1);
     void open_explain_modal();
     void open_author_modal();
+    void set_inspector_visible(bool visible) { show_inspector_ = visible; }
 
     core::GameState& game_state() noexcept { return game_state_; }
     const core::GameState& game_state() const noexcept { return game_state_; }
@@ -97,6 +98,8 @@ private:
                           SDL_Texture* tex, int tex_w, int tex_h, bool& open_flag);
     void draw_game_event_modal();
     void draw_path_fallback_modal();
+    void draw_inspector();
+    void draw_hint_overlay();
 
     void request_file_dialog(FileDialogAction action);
 
@@ -148,6 +151,10 @@ private:
     bool path_modal_open_pending_ = false;
     FileDialogAction path_modal_action_ = FileDialogAction::ImportHst;
     char path_modal_buf_[512] = {};
+
+    // Optional F12 Inspector / Hint assistant
+    bool show_inspector_ = false;
+    bool show_hint_overlay_ = false;
 
     // Async SDL3 file dialog handoff queue
     std::mutex file_choice_mutex_;

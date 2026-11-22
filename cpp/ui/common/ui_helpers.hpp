@@ -1,7 +1,13 @@
 #pragma once
 
+#include "core/config.hpp"
+#include "core/game_state.hpp"
+#include "core/i18n.hpp"
+#include "media/audio_engine.hpp"
+
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -209,6 +215,78 @@ inline SystemFontMatch find_system_cjk_font(bool bold = false,
         }
     }
     return {};
+}
+
+struct InspectorSnapshot {
+    std::string mode;
+    std::string stage;
+    std::string tiles_left;
+    std::string lives_score;
+    std::string time_left;
+    std::string audio_backend;
+    std::string soundfont;
+    std::string track;
+    std::string next_hint;
+    bool has_valid_hint = false;
+    int hint_c1 = -1;
+    int hint_r1 = -1;
+    int hint_c2 = -1;
+    int hint_r2 = -1;
+};
+
+inline std::string localized_backend_name(core::MidiBackend backend, const core::I18n& i18n) {
+    switch (backend) {
+        case core::MidiBackend::OstAudio:
+            return i18n.tr("menu.settings.midi_ost");
+        case core::MidiBackend::NativeOS:
+            return i18n.tr("menu.settings.midi_native");
+        case core::MidiBackend::EmbeddedSoundFont:
+            return i18n.tr("menu.settings.midi_embedded");
+    }
+    return "?";
+}
+
+inline InspectorSnapshot build_inspector_snapshot(const core::GameState& gs,
+                                                  const media::AudioEngine& audio,
+                                                  const core::Config& cfg,
+                                                  const core::I18n& i18n) {
+    InspectorSnapshot snap;
+    snap.mode = gs.in_title_screen() ? i18n.tr("inspector.mode.title")
+                                     : i18n.tr("inspector.mode.playing");
+
+    std::string shift_key = "inspector.shift." + std::to_string(std::clamp(gs.level(), 0, 6));
+    snap.stage = std::to_string(gs.level() + 1) + " / 7 (" + i18n.tr(shift_key) + ")";
+    snap.tiles_left = std::to_string(gs.board().tiles_left()) + " / 144";
+    snap.lives_score = i18n.tr("inspector.lives") + ": " + std::to_string(gs.lives()) +
+                       "   " + i18n.tr("inspector.score") + ": " +
+                       std::to_string(static_cast<int>(std::lround(gs.score())));
+    snap.time_left = std::to_string(gs.remaining_seconds()) + " s";
+    snap.audio_backend = localized_backend_name(cfg.midi_backend, i18n);
+    snap.soundfont = audio.active_soundfont_name();
+
+    int track_id = (audio.current_midi_track() >= 0) ? (audio.current_midi_track() + 101) : 101;
+    snap.track = std::to_string(track_id) + " (" +
+                 (audio.is_midi_playing() ? i18n.tr("inspector.playing") : i18n.tr("inspector.stopped")) + ")";
+
+    int c1 = static_cast<int>(std::lround(gs.board().hint_x1()));
+    int r1 = static_cast<int>(std::lround(gs.board().hint_y1()));
+    int c2 = static_cast<int>(std::lround(gs.board().hint_x2()));
+    int r2 = static_cast<int>(std::lround(gs.board().hint_y2()));
+    if (!gs.in_title_screen() && gs.board_active() &&
+        c1 >= 1 && c1 <= core::Board::kPlayCols && r1 >= 1 && r1 <= core::Board::kPlayRows &&
+        c2 >= 1 && c2 <= core::Board::kPlayCols && r2 >= 1 && r2 <= core::Board::kPlayRows &&
+        gs.board().cell(c1, r1).occupied && gs.board().cell(c2, r2).occupied) {
+        snap.has_valid_hint = true;
+        snap.hint_c1 = c1;
+        snap.hint_r1 = r1;
+        snap.hint_c2 = c2;
+        snap.hint_r2 = r2;
+        snap.next_hint = "(" + std::to_string(c1) + ", " + std::to_string(r1) + ") <-> (" +
+                         std::to_string(c2) + ", " + std::to_string(r2) + ")";
+    } else {
+        snap.next_hint = "-";
+    }
+    return snap;
 }
 
 } // namespace llk2::ui::common

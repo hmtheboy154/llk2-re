@@ -153,6 +153,7 @@ if(LLK2_UI_QT)
         cpp/ui/qt/main_window.cpp
         cpp/ui/qt/table_dialog.cpp
         cpp/ui/qt/image_dialogs.cpp
+        cpp/ui/qt/inspector_dialog.cpp
     )
 
     target_include_directories(llk2-qt PRIVATE

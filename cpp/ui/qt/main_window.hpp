@@ -24,6 +24,8 @@
 
 namespace llk2::ui::qt {
 
+class InspectorDialog;
+
 class BoardWidget : public QWidget {
 public:
     using MouseMoveCallback = std::function<void(float lx, float ly)>;
@@ -32,6 +34,7 @@ public:
     BoardWidget(media::BoardRenderer& renderer, const core::Config& config, QWidget* parent = nullptr);
 
     void set_callbacks(MouseMoveCallback on_move, MouseDownCallback on_down);
+    void set_hint_overlay(bool enabled, int c1, int r1, int c2, int r2);
 
     // Sync full 768x550 RGBA8888 canvas to native QImage::Format_RGB32 and schedule repaint
     void sync_full(bool immediate_repaint = false);
@@ -56,6 +59,12 @@ private:
     QImage rgb32_buf_;
     MouseMoveCallback on_move_;
     MouseDownCallback on_down_;
+
+    bool hint_enabled_ = false;
+    int hint_c1_ = -1;
+    int hint_r1_ = -1;
+    int hint_c2_ = -1;
+    int hint_r2_ = -1;
 };
 
 class MainWindow : public QMainWindow {
@@ -76,6 +85,8 @@ public:
     void set_scale_filter(core::ScaleFilter filter);
     void set_midi_backend(core::MidiBackend backend);
     void set_midi_track_enabled(int track_id, bool enabled);
+    void set_inspector_visible(bool visible);
+    void set_hint_highlight(bool enabled);
 
     core::GameState& game_state() noexcept { return game_state_; }
     BoardWidget* board_widget() noexcept { return board_widget_; }
@@ -100,6 +111,7 @@ private:
     void on_import_hst();
     void on_export_hst();
     void on_select_soundfont();
+    void refresh_inspector_and_hint();
 
     static uint64_t now_ticks_ms();
 
@@ -113,7 +125,9 @@ private:
     core::GameState game_state_;
     media::BoardRenderer renderer_;
     BoardWidget* board_widget_ = nullptr;
+    InspectorDialog* inspector_dlg_ = nullptr;
     QTimer* tick_timer_ = nullptr;
+    bool show_hint_overlay_ = false;
 
     // Top-level menus: 遊戲(&G) - 背景聲音(&B) - 設定(&S) - 關於(&A)
     QMenu* menu_game_ = nullptr;
@@ -161,6 +175,7 @@ private:
 
     QAction* act_import_hst_ = nullptr;
     QAction* act_export_hst_ = nullptr;
+    QAction* act_inspector_ = nullptr;
 
     // About menu actions
     QAction* act_explain_ = nullptr;

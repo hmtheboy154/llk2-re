@@ -88,6 +88,7 @@ BuiApp::BuiApp(media::AssetManager& assets,
     i18n_.add_change_listener([this](const std::string& /*lang*/) {
         update_window_title();
         rebuild_menus();
+        refresh_inspector_ui(true);
     });
 }
 
@@ -177,6 +178,124 @@ void BuiApp::build_ui_tree() {
 
     // Keyboard shortcuts
     BK_bind(ctx_, "F2", reinterpret_cast<void*>(static_cast<uintptr_t>(MenuAction::NewGame)));
+    BK_bind(ctx_, "F12", reinterpret_cast<void*>(static_cast<uintptr_t>(MenuAction::ToggleInspector)));
+}
+
+void BuiApp::build_inspector_tree() {
+    insp_root_ = BK_node_new("frame");
+    BK_set_num(insp_root_, "padding", 14);
+
+    auto add_line = [&]() -> BKNode* {
+        BKNode* lbl = BK_node_new("label");
+        BK_node_add(insp_root_, lbl, -1);
+        BK_geom_set_manager(lbl, BK_GEOM_PACK);
+        BK_geom_set(lbl, "side", 0);
+        BK_geom_set(lbl, "fill", 1);
+        BK_geom_set(lbl, "pady0", 2);
+        BK_geom_set(lbl, "pady1", 2);
+        return lbl;
+    };
+
+    auto add_sep = [&]() {
+        BKNode* sep = BK_node_new("separator");
+        BK_set_num(sep, "line", 1);
+        BK_set_num(sep, "factor", 0.4);
+        BK_node_add(insp_root_, sep, -1);
+        BK_geom_set_manager(sep, BK_GEOM_PACK);
+        BK_geom_set(sep, "side", 0);
+        BK_geom_set(sep, "fill", 1);
+        BK_geom_set(sep, "pady0", 5);
+        BK_geom_set(sep, "pady1", 5);
+    };
+
+    insp_lbl_mode_ = add_line();
+    insp_lbl_stage_ = add_line();
+    insp_lbl_tiles_ = add_line();
+    insp_lbl_lives_score_ = add_line();
+    insp_lbl_time_ = add_line();
+    add_sep();
+    insp_lbl_backend_ = add_line();
+    insp_lbl_sf2_ = add_line();
+    insp_lbl_track_ = add_line();
+    add_sep();
+    insp_lbl_hint_ = add_line();
+
+    insp_chk_hint_ = BK_node_new("checkbox");
+    BK_set_num(insp_chk_hint_, "value", show_hint_overlay_ ? 1.0 : 0.0);
+    BK_node_add(insp_root_, insp_chk_hint_, -1);
+    BK_geom_set_manager(insp_chk_hint_, BK_GEOM_PACK);
+    BK_geom_set(insp_chk_hint_, "side", 0);
+    BK_geom_set(insp_chk_hint_, "fill", 1);
+    BK_geom_set(insp_chk_hint_, "pady0", 6);
+    BK_geom_set(insp_chk_hint_, "pady1", 6);
+
+    insp_btn_close_ = BK_node_new("button");
+    BK_node_add(insp_root_, insp_btn_close_, -1);
+    BK_geom_set_manager(insp_btn_close_, BK_GEOM_PACK);
+    BK_geom_set(insp_btn_close_, "side", 0);
+    BK_geom_set(insp_btn_close_, "reqwidth", 100);
+    BK_geom_set(insp_btn_close_, "pady0", 6);
+
+    insp_ctx_ = BK_context_new(insp_root_);
+    BKHost host{};
+    host.data = this;
+    host.emit = &BuiApp::on_inspector_emit;
+    BK_context_set_host(insp_ctx_, &host);
+
+    BK_bind(insp_ctx_, "F12", reinterpret_cast<void*>(static_cast<uintptr_t>(MenuAction::ToggleInspector)));
+    BK_bind(insp_ctx_, "Escape", reinterpret_cast<void*>(static_cast<uintptr_t>(MenuAction::ToggleInspector)));
+}
+
+void BuiApp::destroy_inspector_window() {
+    if (insp_win_) {
+        if (BK_window_is_open(insp_win_)) {
+            BK_window_close(insp_win_);
+        }
+        BK_window_free(insp_win_);
+        insp_win_ = nullptr;
+    }
+}
+
+void BuiApp::refresh_inspector_ui(bool force) {
+    if (!insp_root_) return;
+
+    auto snap = common::build_inspector_snapshot(game_state_, audio_, config_, i18n_);
+    std::string lines[9] = {
+        i18n_.tr("inspector.mode") + ": " + snap.mode,
+        i18n_.tr("inspector.stage") + ": " + snap.stage,
+        i18n_.tr("inspector.tiles_left") + ": " + snap.tiles_left,
+        snap.lives_score,
+        i18n_.tr("inspector.time_left") + ": " + snap.time_left,
+        i18n_.tr("inspector.audio_backend") + ": " + snap.audio_backend,
+        i18n_.tr("inspector.soundfont") + ": " + snap.soundfont,
+        i18n_.tr("inspector.track") + ": " + snap.track,
+        i18n_.tr("inspector.next_hint") + ": " + snap.next_hint,
+    };
+
+    BKNode* nodes[9] = {
+        insp_lbl_mode_, insp_lbl_stage_, insp_lbl_tiles_, insp_lbl_lives_score_,
+        insp_lbl_time_, insp_lbl_backend_, insp_lbl_sf2_, insp_lbl_track_, insp_lbl_hint_
+    };
+
+    for (int i = 0; i < 9; ++i) {
+        if (nodes[i] && (force || last_insp_lines_[i] != lines[i])) {
+            last_insp_lines_[i] = lines[i];
+            BK_set_str(nodes[i], "text", lines[i].c_str());
+        }
+    }
+
+    if (force) {
+        if (insp_chk_hint_) {
+            BK_set_str(insp_chk_hint_, "label", i18n_.tr("inspector.highlight_hint").c_str());
+            BK_set_num(insp_chk_hint_, "value", show_hint_overlay_ ? 1.0 : 0.0);
+        }
+        if (insp_btn_close_) {
+            BK_set_str(insp_btn_close_, "text", i18n_.tr("dialog.btn.close").c_str());
+        }
+        if (insp_win_) {
+            BK_window_set_title(insp_win_, i18n_.tr("inspector.title").c_str());
+        }
+    }
 }
 
 void BuiApp::rebuild_menus() {
@@ -282,6 +401,7 @@ void BuiApp::rebuild_menus() {
 
     std::string s_imp = i18n_.tr("menu.settings.import_hst");
     std::string s_exp = i18n_.tr("menu.settings.export_hst");
+    std::string s_insp = i18n_.tr("menu.settings.inspector");
 
     BK_set_str(mb_settings_, "text", t_settings.c_str());
     BKMenuSpec settings_items[] = {
@@ -295,6 +415,8 @@ void BuiApp::rebuild_menus() {
         make_sep(),
         make_item(s_imp, static_cast<uintptr_t>(MenuAction::ImportHst)),
         make_item(s_exp, static_cast<uintptr_t>(MenuAction::ExportHst)),
+        make_sep(),
+        make_item(s_insp, static_cast<uintptr_t>(MenuAction::ToggleInspector), show_inspector_ ? 1 : 0, true, "F12"),
     };
     BK_menubutton_set_items(mb_settings_, settings_items, static_cast<int>(sizeof(settings_items) / sizeof(settings_items[0])));
 
@@ -371,8 +493,10 @@ bool BuiApp::init(bool headless_mode, std::string* err_out) {
     BK_set_theme(current_theme_.c_str());
     setup_cjk_font();
     build_ui_tree();
+    build_inspector_tree();
     update_window_title();
     rebuild_menus();
+    refresh_inspector_ui(true);
 
     renderer_.render(game_state_);
     board_dirty_ = true;
@@ -418,6 +542,8 @@ void BuiApp::shutdown() {
         save_config_and_scores();
     }
 
+    destroy_inspector_window();
+
     if (window_) {
         if (tick_timer_id_ != 0) {
             BK_window_cancel_timer(window_, tick_timer_id_);
@@ -426,6 +552,10 @@ void BuiApp::shutdown() {
         BK_window_free(window_);
         window_ = nullptr;
     }
+    if (insp_headless_raster_) {
+        BUI_raster_free(insp_headless_raster_);
+        insp_headless_raster_ = nullptr;
+    }
     if (headless_raster_) {
         BUI_raster_free(headless_raster_);
         headless_raster_ = nullptr;
@@ -433,6 +563,17 @@ void BuiApp::shutdown() {
     if (board_tex_ != 0) {
         BUI_texture_free(board_tex_);
         board_tex_ = 0;
+    }
+    if (insp_ctx_) {
+        BK_context_free(insp_ctx_);
+        insp_ctx_ = nullptr;
+    }
+    if (insp_root_) {
+        BK_node_free(insp_root_);
+        insp_root_ = nullptr;
+        insp_lbl_mode_ = insp_lbl_stage_ = insp_lbl_tiles_ = insp_lbl_lives_score_ = nullptr;
+        insp_lbl_time_ = insp_lbl_backend_ = insp_lbl_sf2_ = insp_lbl_track_ = nullptr;
+        insp_lbl_hint_ = insp_chk_hint_ = insp_btn_close_ = nullptr;
     }
     if (ctx_) {
         BK_context_free(ctx_);
@@ -491,6 +632,12 @@ void BuiApp::flush_deferred_actions() {
             case DeferredAction::OpenRecords:
                 open_records_modal(-1);
                 break;
+            case DeferredAction::ToggleInspector:
+                set_inspector_visible(!show_inspector_);
+                break;
+            case DeferredAction::CloseInspector:
+                set_inspector_visible(false);
+                break;
         }
     }
 }
@@ -502,6 +649,7 @@ void BuiApp::trigger_new_game() {
     renderer_.render(game_state_);
     board_dirty_ = true;
     upload_board_texture();
+    refresh_inspector_ui();
 }
 
 void BuiApp::trigger_give_up() {
@@ -511,12 +659,14 @@ void BuiApp::trigger_give_up() {
     renderer_.render(game_state_);
     board_dirty_ = true;
     upload_board_texture();
+    refresh_inspector_ui();
 }
 
 void BuiApp::set_language(const std::string& lang_code) {
     if (i18n_.set_language(lang_code)) {
         config_.language = lang_code;
         rebuild_menus();
+        refresh_inspector_ui(true);
         save_config_and_scores();
     }
 }
@@ -541,6 +691,7 @@ void BuiApp::set_midi_backend(core::MidiBackend backend) {
     config_.midi_backend = backend;
     rebuild_menus();
     audio_.update(config_);
+    refresh_inspector_ui();
     save_config_and_scores();
 }
 
@@ -548,6 +699,7 @@ void BuiApp::set_midi_track_enabled(int track_id, bool enabled) {
     config_.set_track_enabled(track_id, enabled);
     rebuild_menus();
     audio_.update(config_);
+    refresh_inspector_ui();
     save_config_and_scores();
 }
 
@@ -561,6 +713,46 @@ void BuiApp::set_blender_theme(const std::string& theme_name) {
             BK_node_relayout(root_);
             BK_node_invalidate(root_);
         }
+        if (insp_root_) {
+            BK_node_relayout(insp_root_);
+            BK_node_invalidate(insp_root_);
+        }
+    }
+}
+
+void BuiApp::set_inspector_visible(bool visible) {
+    show_inspector_ = visible;
+    rebuild_menus();
+
+    if (show_inspector_) {
+        refresh_inspector_ui(true);
+        if (!headless_mode_ && window_ && BK_window_supported()) {
+            if (!insp_win_) {
+                insp_win_ = BK_window_new(insp_ctx_, i18n_.tr("inspector.title").c_str(), 360, 360);
+                if (insp_win_) {
+                    BKWindowCallbacks cb{};
+                    cb.data = this;
+                    cb.on_close = &BuiApp::on_inspector_close;
+                    BK_window_set_callbacks(insp_win_, &cb);
+                    BK_window_wm(insp_win_, "minsize", 340, 345);
+                    BK_window_show(insp_win_);
+                }
+            } else {
+                BK_window_wm(insp_win_, "lift", 0, 0);
+            }
+        }
+    } else {
+        destroy_inspector_window();
+    }
+}
+
+void BuiApp::set_hint_highlight(bool enabled) {
+    show_hint_overlay_ = enabled;
+    if (insp_chk_hint_) {
+        BK_set_num(insp_chk_hint_, "value", enabled ? 1.0 : 0.0);
+    }
+    if (board_node_) {
+        BK_node_invalidate(board_node_);
     }
 }
 
@@ -722,6 +914,7 @@ void BuiApp::accept_game_event_modal() {
     renderer_.render(game_state_);
     board_dirty_ = true;
     upload_board_texture();
+    refresh_inspector_ui();
 }
 
 void BuiApp::open_records_modal(int editable_rank) {
@@ -872,6 +1065,7 @@ void BuiApp::accept_records_modal() {
         renderer_.render(game_state_);
         board_dirty_ = true;
         upload_board_texture();
+        refresh_inspector_ui();
     }
 }
 
@@ -1045,6 +1239,7 @@ void BuiApp::process_game_events() {
     renderer_.render(game_state_);
     board_dirty_ = true;
     upload_board_texture();
+    refresh_inspector_ui();
 
     if (had_modal && active_modal_ == ModalKind::None) {
         show_next_game_modal();
@@ -1067,6 +1262,9 @@ void BuiApp::tick_game() {
         renderer_.render(game_state_);
         board_dirty_ = true;
         upload_board_texture();
+    }
+    if (show_inspector_) {
+        refresh_inspector_ui();
     }
 }
 
@@ -1111,6 +1309,7 @@ void BuiApp::on_host_emit(void* data, BKNode* node, int kind, void* ref, double 
                 break;
             case MenuAction::Exit:
                 self->save_config_and_scores();
+                self->destroy_inspector_window();
                 if (self->window_) {
                     BK_window_close(self->window_);
                 }
@@ -1186,6 +1385,9 @@ void BuiApp::on_host_emit(void* data, BKNode* node, int kind, void* ref, double 
                 break;
             case MenuAction::ExportHst:
                 self->on_export_hst();
+                break;
+            case MenuAction::ToggleInspector:
+                self->queue_deferred(DeferredAction::ToggleInspector);
                 break;
             case MenuAction::ShowExplain:
                 self->queue_deferred(DeferredAction::OpenExplain);
@@ -1267,6 +1469,33 @@ void BuiApp::on_host_emit(void* data, BKNode* node, int kind, void* ref, double 
     }
 }
 
+void BuiApp::on_inspector_emit(void* data, BKNode* node, int kind, void* ref, double /*a*/, double /*b*/) {
+    auto* self = static_cast<BuiApp*>(data);
+    if (!self) return;
+
+    if (kind == BK_EV_CALL) {
+        auto act = static_cast<MenuAction>(reinterpret_cast<uintptr_t>(ref));
+        if (act == MenuAction::ToggleInspector) {
+            self->queue_deferred(DeferredAction::CloseInspector);
+        }
+        return;
+    }
+
+    if (kind == BK_EV_CHANGE && node == self->insp_chk_hint_) {
+        bool checked = (BK_get_num(node, "value") != 0.0);
+        self->show_hint_overlay_ = checked;
+        if (self->board_node_) {
+            BK_node_invalidate(self->board_node_);
+        }
+        return;
+    }
+
+    if (kind == BK_EV_CLICK && node == self->insp_btn_close_) {
+        self->queue_deferred(DeferredAction::CloseInspector);
+        return;
+    }
+}
+
 int BuiApp::on_board_event(void* data, BKNode* /*node*/, const BKCustomEvent* e) {
     auto* self = static_cast<BuiApp*>(data);
     if (!self || !e) return 0;
@@ -1315,6 +1544,7 @@ int BuiApp::on_board_event(void* data, BKNode* /*node*/, const BKCustomEvent* e)
                 self->renderer_.render(self->game_state_);
                 self->board_dirty_ = true;
                 self->upload_board_texture();
+                self->refresh_inspector_ui();
             }
             return 1;
         }
@@ -1357,6 +1587,25 @@ void BuiApp::on_board_draw(void* data, BKNode* /*node*/, BuiRaster* r, const int
     int flags = (self->config_.scale_filter == core::ScaleFilter::Nearest) ? BUI_MESH_NEAREST : 0;
 
     BUI_raster_mesh(r, vtx, 4, idx, 6, flags, self->board_tex_, nullptr, 0.0f, 0.0f);
+
+    // Optional Inspector hint-pair highlight directly over the board
+    if (self->show_hint_overlay_ && self->game_state_.board_active() && !self->game_state_.in_title_screen()) {
+        auto snap = common::build_inspector_snapshot(self->game_state_, self->audio_, self->config_, self->i18n_);
+        if (snap.has_valid_hint) {
+            float sx = static_cast<float>(vw) / static_cast<float>(core::GameState::kCanvasWidth);
+            float sy = static_cast<float>(vh) / static_cast<float>(core::GameState::kCanvasHeight);
+            const float gold[4] = {1.0f, 0.86f, 0.16f, 0.95f};
+            auto draw_box = [&](int c, int row) {
+                float bx = x0 + static_cast<float>(core::GameState::kOffX + c * media::BoardRenderer::TILE_W) * sx;
+                float by = y0 + static_cast<float>(core::GameState::kOffY + row * media::BoardRenderer::TILE_H) * sy;
+                float bw = static_cast<float>(media::BoardRenderer::TILE_W) * sx;
+                float bh = static_cast<float>(media::BoardRenderer::TILE_H) * sy;
+                BUI_raster_frame_rect(r, bx, by, bw, bh, 3.0f, gold);
+            };
+            draw_box(snap.hint_c1, snap.hint_r1);
+            draw_box(snap.hint_c2, snap.hint_r2);
+        }
+    }
 }
 
 void BuiApp::on_window_frame(void* data, BKWindow* /*win*/) {
@@ -1382,8 +1631,20 @@ int BuiApp::on_window_close(void* data, BKWindow* /*win*/) {
     auto* self = static_cast<BuiApp*>(data);
     if (self) {
         self->save_config_and_scores();
+        self->destroy_inspector_window();
+        BK_window_quit();
     }
     return 1; // allow window close
+}
+
+int BuiApp::on_inspector_close(void* data, BKWindow* /*win*/) {
+    auto* self = static_cast<BuiApp*>(data);
+    if (self) {
+        self->show_inspector_ = false;
+        self->rebuild_menus();
+        self->queue_deferred(DeferredAction::CloseInspector);
+    }
+    return 1; // close only the Inspector window, keep main game window running
 }
 
 void BuiApp::simulate_click(int x, int y) {
@@ -1418,6 +1679,24 @@ bool BuiApp::render_headless_frame(const std::filesystem::path& screenshot_png) 
 
     if (!screenshot_png.empty()) {
         return write_bui_raster_png(headless_raster_, screenshot_png);
+    }
+    return true;
+}
+
+bool BuiApp::render_inspector_headless_frame(const std::filesystem::path& screenshot_png) {
+    if (!initialized_ || !insp_ctx_) return false;
+
+    refresh_inspector_ui(true);
+    constexpr int w = 360;
+    constexpr int h = 360;
+    if (!insp_headless_raster_) {
+        insp_headless_raster_ = BUI_raster_create(w, h);
+    }
+    if (!insp_headless_raster_) return false;
+
+    BK_render(insp_ctx_, insp_headless_raster_, w, h, 1);
+    if (!screenshot_png.empty()) {
+        return write_bui_raster_png(insp_headless_raster_, screenshot_png);
     }
     return true;
 }

@@ -123,7 +123,9 @@ int main(int argc, char* argv[]) {
         app.render_frame();
 
         if (!screenshot_path.empty()) {
-            app.render_frame();
+            app.set_inspector_visible(true);
+            app.render_frame(); // 1st frame computes AutoResize window bounds
+            app.render_frame(); // 2nd frame renders visible Inspector + board
             app.save_screenshot(screenshot_path);
         }
 
