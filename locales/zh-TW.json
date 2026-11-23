@@ -80,6 +80,7 @@
   "inspector.playing": "播放中",
   "inspector.stopped": "已停止",
   "inspector.next_hint": "可消除提示",
+  "inspector.hint_hidden": "已隱藏",
   "inspector.highlight_hint": "在棋盤上標示提示配對",
   "inspector.shift.0": "固定無移動",
   "inspector.shift.1": "向上集中",
@@ -95,6 +96,10 @@
   "rules.turn_2": "兩個轉折",
   "rules.body": "",
   "rules.controls": "",
+
+  "about.credits.original": "原版程式製作：[CHEN PROGRAM STUDY](https://web.archive.org/web/20070615052321/http://myweb.hinet.net/home4/cps-chen/main.htm)",
+  "about.credits.sc_trans": "簡體中文翻譯由 [LLK.cn](http://www.llk.cn/)（原 [www.LoveSnow.com](https://web.archive.org/web/20040729014651/http://www.lovesnow.com/)）的 Casm 製作。",
+  "about.credits.remaster": "非官方重製版由 [HMTheBoy154](https://github.com/hmtheboy154)\n在 AI 助手協助下製作。",
 
   "msg.stage_clear.title": "成功",
   "msg.stage_clear.body": "過關成功，請進入第 {level} 關。\n剩餘時間能量可以獲得 {bonus} 分",

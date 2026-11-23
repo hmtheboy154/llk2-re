@@ -97,6 +97,7 @@ private:
     void draw_image_modal(const char* popup_id, const std::string& title,
                           SDL_Texture* tex, int tex_w, int tex_h, bool& open_flag,
                           bool apply_explain_overlay = false);
+    void draw_about_modal();
     void draw_game_event_modal();
     void draw_path_fallback_modal();
     void draw_inspector();

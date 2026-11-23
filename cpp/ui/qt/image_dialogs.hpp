@@ -31,4 +31,13 @@ private:
     common::ExplainOverlayContent overlay_;
 };
 
+// Modern About dialog: original Form_Author_Picture on the left, neat divider margin,
+// and localized colored credits with clickable external links on the right.
+class AboutDialog : public QDialog {
+public:
+    AboutDialog(const media::RgbaSurface& author_surf,
+                const core::I18n& i18n,
+                QWidget* parent = nullptr);
+};
+
 } // namespace llk2::ui::qt

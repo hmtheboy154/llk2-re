@@ -458,11 +458,15 @@ void ImGuiApp::open_records_modal(int editable_rank) {
 }
 
 void ImGuiApp::open_explain_modal() {
+    show_records_modal_ = false;
+    show_author_modal_ = false;
     show_explain_modal_ = true;
     explain_open_pending_ = true;
 }
 
 void ImGuiApp::open_author_modal() {
+    show_records_modal_ = false;
+    show_explain_modal_ = false;
     show_author_modal_ = true;
     author_open_pending_ = true;
 }
@@ -1267,6 +1271,114 @@ void ImGuiApp::draw_image_modal(const char* popup_id, const std::string& title,
     ImGui::PopStyleVar();
 }
 
+void ImGuiApp::draw_about_modal() {
+    if (!show_author_modal_) return;
+
+    std::string label = i18n_.tr("dialog.author.title") + "###llk2_author";
+    if (author_open_pending_) {
+        ImGui::OpenPopup(label.c_str());
+        author_open_pending_ = false;
+    }
+
+    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4.0f, 4.0f));
+    if (ImGui::BeginPopupModal(label.c_str(), &show_author_modal_,
+                               ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove)) {
+        ImVec2 vp = ImGui::GetMainViewport()->WorkSize;
+        float max_w = std::max(240.0f, vp.x - 16.0f);
+        float max_h = std::max(180.0f, vp.y - 54.0f);
+        float scale = std::min(1.0f, std::min(max_w / static_cast<float>(common::AboutLayout::kTotalW),
+                                              max_h / static_cast<float>(common::AboutLayout::kTotalH)));
+        ImVec2 card_sz(static_cast<float>(common::AboutLayout::kTotalW) * scale,
+                       static_cast<float>(common::AboutLayout::kTotalH) * scale);
+
+        ImGui::InvisibleButton("##about_card", card_sz);
+        ImVec2 p0 = ImGui::GetItemRectMin();
+        ImVec2 p1 = ImGui::GetItemRectMax();
+        bool card_hovered = ImGui::IsItemHovered();
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+
+        // Unified pure-black background matching Form_Author_Picture.jpg
+        dl->AddRectFilled(p0, p1, IM_COL32(0, 0, 0, 255));
+
+        // Left: original Form_Author_Picture.jpg
+        if (author_tex_) {
+            ImVec2 img_p1(p0.x + static_cast<float>(common::AboutLayout::kImageW) * scale,
+                          p0.y + static_cast<float>(common::AboutLayout::kImageH) * scale);
+            dl->AddImage(reinterpret_cast<ImTextureID>(author_tex_), p0, img_p1);
+        }
+
+        // Middle subtle vertical divider
+        float div_x = p0.x + static_cast<float>(common::AboutLayout::kDividerX) * scale;
+        dl->AddLine(ImVec2(div_x, p0.y + static_cast<float>(common::AboutLayout::kDividerTop) * scale),
+                    ImVec2(div_x, p0.y + static_cast<float>(common::AboutLayout::kDividerBottom) * scale),
+                    IM_COL32(58, 58, 58, 255), 1.0f);
+
+        // Right: localized colored credits with clickable links
+        ImFont* font = ImGui::GetFont();
+        float font_sz = std::max(11.0f, ImGui::GetFontSize() * scale);
+        float line_h = std::round(font_sz * 1.38f);
+        float para_gap = std::round(font_sz * 1.0f);
+        const auto content = common::build_about_content(i18n_);
+        const auto layout = common::layout_about_paragraphs(
+            content,
+            static_cast<float>(common::AboutLayout::kTextWidth) * scale,
+            line_h,
+            para_gap,
+            [&](std::string_view sv) {
+                return std::ceil(font->CalcTextSizeA(font_sz, FLT_MAX, 0.0f, sv.data(), sv.data() + sv.size()).x);
+            });
+
+        float text_ox = std::floor(p0.x + static_cast<float>(common::AboutLayout::kTextLeft) * scale);
+        float text_oy = std::floor(p0.y + std::max(12.0f * scale, (card_sz.y - layout.total_height) * 0.5f));
+
+        ImVec2 mp = ImGui::GetIO().MousePos;
+        std::string hovered_url;
+        if (card_hovered) {
+            for (const auto& ch : layout.chunks) {
+                if (!ch.is_link) continue;
+                float cx0 = text_ox + ch.x;
+                float cy0 = text_oy + ch.y;
+                if (mp.x >= cx0 && mp.x <= cx0 + ch.w && mp.y >= cy0 && mp.y <= cy0 + ch.h) {
+                    hovered_url = ch.url;
+                    break;
+                }
+            }
+        }
+
+        for (const auto& ch : layout.chunks) {
+            float cx = std::floor(text_ox + ch.x);
+            float cy = std::floor(text_oy + ch.y);
+            bool is_hovered = ch.is_link && !hovered_url.empty() && (ch.url == hovered_url);
+            const auto& c = is_hovered ? ch.hover_color : ch.color;
+            ImU32 col = IM_COL32(c.r, c.g, c.b, 255);
+            dl->AddText(font, font_sz, ImVec2(cx, cy), col,
+                        ch.text.c_str(), ch.text.c_str() + ch.text.size());
+            if (ch.is_link) {
+                float uy = std::floor(cy + font_sz);
+                dl->AddLine(ImVec2(cx, uy), ImVec2(cx + ch.w, uy), col, is_hovered ? 1.5f : 1.0f);
+            }
+        }
+
+        if (!hovered_url.empty()) {
+            ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+            ImGui::SetTooltip("%s", hovered_url.c_str());
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                common::open_external_url(hovered_url);
+            }
+        }
+
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape) || ImGui::IsKeyPressed(ImGuiKey_Enter) || !show_author_modal_) {
+            show_author_modal_ = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+    ImGui::PopStyleVar();
+}
+
 void ImGuiApp::draw_path_fallback_modal() {
     if (!show_path_modal_) return;
 
@@ -1311,7 +1423,7 @@ void ImGuiApp::draw_path_fallback_modal() {
 void ImGuiApp::draw_inspector() {
     if (!show_inspector_) return;
 
-    auto snap = common::build_inspector_snapshot(game_state_, audio_, config_, i18n_);
+    auto snap = common::build_inspector_snapshot(game_state_, audio_, config_, i18n_, show_hint_overlay_);
     std::string title = i18n_.tr("inspector.title") + "###llk2_inspector";
 
     ImGui::SetNextWindowSize(ImVec2(330.0f, 0.0f), ImGuiCond_FirstUseEver);
@@ -1377,9 +1489,7 @@ void ImGuiApp::draw_modals() {
     draw_image_modal("llk2_explain", i18n_.tr("dialog.explain.title"),
                      explain_tex_, explain_tex_w_, explain_tex_h_,
                      show_explain_modal_, true);
-    draw_image_modal("llk2_author", i18n_.tr("dialog.author.title"),
-                     author_tex_, assets_.form_author().width, assets_.form_author().height,
-                     show_author_modal_, false);
+    draw_about_modal();
     draw_path_fallback_modal();
 }
 

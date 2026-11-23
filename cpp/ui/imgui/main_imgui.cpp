@@ -16,6 +16,7 @@ int main(int argc, char* argv[]) {
     std::filesystem::path custom_assets_dir;
     std::filesystem::path screenshot_path;
     std::filesystem::path explain_screenshot_path;
+    std::filesystem::path about_screenshot_path;
     std::string forced_lang;
     bool smoke_test = false;
 
@@ -29,6 +30,8 @@ int main(int argc, char* argv[]) {
             screenshot_path = argv[++i];
         } else if (arg == "--explain-screenshot" && i + 1 < argc) {
             explain_screenshot_path = argv[++i];
+        } else if (arg == "--about-screenshot" && i + 1 < argc) {
+            about_screenshot_path = argv[++i];
         } else if (arg == "--lang" && i + 1 < argc) {
             forced_lang = argv[++i];
         }
@@ -153,6 +156,10 @@ int main(int argc, char* argv[]) {
         }
         app.open_author_modal();
         app.render_frame();
+        app.render_frame();
+        if (!about_screenshot_path.empty()) {
+            app.save_screenshot(about_screenshot_path);
+        }
 
         app.trigger_give_up();
         app.render_frame();

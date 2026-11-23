@@ -16,6 +16,7 @@ int main(int argc, char* argv[]) {
     std::filesystem::path custom_assets_dir;
     std::filesystem::path screenshot_path;
     std::filesystem::path inspector_screenshot_path;
+    std::filesystem::path about_screenshot_path;
     std::string forced_lang;
     bool smoke_test = false;
 
@@ -29,6 +30,8 @@ int main(int argc, char* argv[]) {
             screenshot_path = argv[++i];
         } else if (arg == "--inspector-screenshot" && i + 1 < argc) {
             inspector_screenshot_path = argv[++i];
+        } else if (arg == "--about-screenshot" && i + 1 < argc) {
+            about_screenshot_path = argv[++i];
         } else if (arg == "--lang" && i + 1 < argc) {
             forced_lang = argv[++i];
         }
@@ -178,11 +181,21 @@ int main(int argc, char* argv[]) {
         }
 
         app.open_author_modal();
+        app.render_headless_frame(about_screenshot_path);
+        // Click inside the About card (non-link left side) must NOT crash or close accidentally
+        app.simulate_click(180, 260);
         app.render_headless_frame();
-        app.simulate_click(384, 300); // center of Author image
+        if (!app.is_modal_open()) {
+            std::fprintf(stderr, "[FAIL] llk2-bui smoke_test: Author modal unexpectedly closed on image click\n");
+            app.shutdown();
+            audio.shutdown();
+            return 8;
+        }
+        // Click on the dim backdrop below the modal dialog must close cleanly
+        app.simulate_click(384, 540);
         app.render_headless_frame();
         if (app.is_modal_open()) {
-            std::fprintf(stderr, "[FAIL] llk2-bui smoke_test: Author modal did not close on click\n");
+            std::fprintf(stderr, "[FAIL] llk2-bui smoke_test: Author modal did not close on backdrop click\n");
             app.shutdown();
             audio.shutdown();
             return 8;

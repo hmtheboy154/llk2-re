@@ -7,6 +7,7 @@
 #include "media/asset_manager.hpp"
 #include "media/audio_engine.hpp"
 #include "media/board_renderer.hpp"
+#include "ui/common/ui_helpers.hpp"
 
 #include "BUI_kit.h"
 
@@ -126,6 +127,8 @@ private:
     void apply_ui_font();
     const char* active_font_family() const noexcept;
     void ensure_explain_texture_for_lang();
+    void ensure_author_texture();
+    void rebuild_author_layout(int card_w, int card_h);
     void build_ui_tree();
     void build_inspector_tree();
     void destroy_inspector_window();
@@ -160,6 +163,8 @@ private:
     static void on_board_draw(void* data, BKNode* node, BuiRaster* r, const int rect[4]);
     static int on_explain_event(void* data, BKNode* node, const BKCustomEvent* e);
     static void on_explain_draw(void* data, BKNode* node, BuiRaster* r, const int rect[4]);
+    static int on_author_event(void* data, BKNode* node, const BKCustomEvent* e);
+    static void on_author_draw(void* data, BKNode* node, BuiRaster* r, const int rect[4]);
     static void on_window_frame(void* data, BKWindow* win);
     static void on_window_timer(void* data, BKWindow* win, int id);
     static int on_window_close(void* data, BKWindow* win);
@@ -225,6 +230,12 @@ private:
     int board_tex_ = 0;
     int explain_tex_ = 0;
     std::string explain_tex_lang_;
+    int author_tex_ = 0;
+    common::AboutTextLayout author_layout_;
+    float author_font_sz_ = 13.5f;
+    float author_text_ox_ = 0.0f;
+    float author_text_oy_ = 0.0f;
+    std::string author_hovered_url_;
     bool board_dirty_ = true;
     int tick_timer_id_ = 0;
 

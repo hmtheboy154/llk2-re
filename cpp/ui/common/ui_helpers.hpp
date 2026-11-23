@@ -5,6 +5,7 @@
 #include "core/i18n.hpp"
 #include "media/asset_manager.hpp"
 #include "media/audio_engine.hpp"
+#include "media/sdl_compat.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -12,6 +13,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -434,7 +436,8 @@ inline std::string localized_backend_name(core::MidiBackend backend, const core:
 inline InspectorSnapshot build_inspector_snapshot(const core::GameState& gs,
                                                   const media::AudioEngine& audio,
                                                   const core::Config& cfg,
-                                                  const core::I18n& i18n) {
+                                                  const core::I18n& i18n,
+                                                  bool reveal_hint = false) {
     InspectorSnapshot snap;
     snap.mode = gs.in_title_screen() ? i18n.tr("inspector.mode.title")
                                      : i18n.tr("inspector.mode.playing");
@@ -466,12 +469,396 @@ inline InspectorSnapshot build_inspector_snapshot(const core::GameState& gs,
         snap.hint_r1 = r1;
         snap.hint_c2 = c2;
         snap.hint_r2 = r2;
-        snap.next_hint = "(" + std::to_string(c1) + ", " + std::to_string(r1) + ") <-> (" +
-                         std::to_string(c2) + ", " + std::to_string(r2) + ")";
+        if (reveal_hint) {
+            snap.next_hint = "(" + std::to_string(c1) + ", " + std::to_string(r1) + ") <-> (" +
+                             std::to_string(c2) + ", " + std::to_string(r2) + ")";
+        } else {
+            snap.next_hint = i18n.tr("inspector.hint_hidden");
+        }
     } else {
         snap.next_hint = "-";
     }
     return snap;
+}
+
+inline bool open_external_url(const std::string& url) {
+    if (url.empty()) return false;
+    return media::sdl_open_url(url.c_str());
+}
+
+// Shared About dialog geometry: original Form_Author_Picture.jpg (370x310, pure black) on the left,
+// subtle vertical divider in the middle margin, and localized colored credits with clickable links on the right.
+struct AboutLayout {
+    static constexpr int kImageW = 370;
+    static constexpr int kImageH = 310;
+    static constexpr int kDividerX = 376;
+    static constexpr int kDividerTop = 22;
+    static constexpr int kDividerBottom = 288;
+    static constexpr int kTextLeft = 398;
+    static constexpr int kTextRightPad = 20;
+    static constexpr int kTotalW = 684;
+    static constexpr int kTotalH = 310;
+    static constexpr int kTextWidth = kTotalW - kTextLeft - kTextRightPad; // 266px
+};
+
+struct AboutColor {
+    uint8_t r = 255;
+    uint8_t g = 255;
+    uint8_t b = 255;
+};
+
+struct AboutSpan {
+    std::string text;
+    std::string url; // empty for plain text, non-empty for clickable hyperlink
+};
+
+struct AboutParagraph {
+    AboutColor text_color;
+    AboutColor link_color;
+    AboutColor hover_color;
+    std::vector<AboutSpan> spans;
+};
+
+struct AboutContent {
+    std::vector<AboutParagraph> paragraphs;
+};
+
+// Parse inline Markdown links `[Label](https://...)` into ordered plain/link spans.
+inline std::vector<AboutSpan> parse_about_markdown_spans(std::string_view src) {
+    std::vector<AboutSpan> out;
+    auto push_plain = [&](std::string_view sv) {
+        if (sv.empty()) return;
+        if (!out.empty() && out.back().url.empty()) {
+            out.back().text.append(sv);
+        } else {
+            out.push_back(AboutSpan{std::string(sv), {}});
+        }
+    };
+
+    size_t pos = 0;
+    while (pos < src.size()) {
+        size_t lb = src.find('[', pos);
+        if (lb == std::string_view::npos) {
+            push_plain(src.substr(pos));
+            break;
+        }
+        size_t rb = src.find("](", lb + 1);
+        if (rb == std::string_view::npos) {
+            push_plain(src.substr(pos));
+            break;
+        }
+        size_t rp = src.find(')', rb + 2);
+        if (rp == std::string_view::npos) {
+            push_plain(src.substr(pos));
+            break;
+        }
+        std::string_view label = src.substr(lb + 1, rb - (lb + 1));
+        std::string_view url = src.substr(rb + 2, rp - (rb + 2));
+        bool valid_url = (url.rfind("http://", 0) == 0 || url.rfind("https://", 0) == 0);
+        if (label.empty() || !valid_url) {
+            push_plain(src.substr(pos, (lb + 1) - pos));
+            pos = lb + 1;
+            continue;
+        }
+        push_plain(src.substr(pos, lb - pos));
+        out.push_back(AboutSpan{std::string(label), std::string(url)});
+        pos = rp + 1;
+    }
+    return out;
+}
+
+inline AboutContent build_about_content(const core::I18n& i18n) {
+    AboutContent content;
+
+    // 1. Original program (Blue)
+    content.paragraphs.push_back(AboutParagraph{
+        AboutColor{88, 166, 255},
+        AboutColor{138, 198, 255},
+        AboutColor{196, 228, 255},
+        parse_about_markdown_spans(i18n.tr("about.credits.original")),
+    });
+
+    // 2. Simplified Chinese translation (Green)
+    content.paragraphs.push_back(AboutParagraph{
+        AboutColor{62, 232, 88},
+        AboutColor{126, 245, 144},
+        AboutColor{188, 255, 198},
+        parse_about_markdown_spans(i18n.tr("about.credits.sc_trans")),
+    });
+
+    // 3. Unofficial Remastered edition (Yellow)
+    content.paragraphs.push_back(AboutParagraph{
+        AboutColor{255, 232, 74},
+        AboutColor{255, 244, 146},
+        AboutColor{255, 251, 206},
+        parse_about_markdown_spans(i18n.tr("about.credits.remaster")),
+    });
+
+    return content;
+}
+
+struct LaidOutAboutChunk {
+    std::string text;
+    std::string url;
+    float x = 0.0f;
+    float y = 0.0f;
+    float w = 0.0f;
+    float h = 0.0f;
+    AboutColor color;
+    AboutColor hover_color;
+    bool is_link = false;
+};
+
+struct AboutTextLayout {
+    std::vector<LaidOutAboutChunk> chunks;
+    float total_height = 0.0f;
+};
+
+namespace detail {
+
+inline uint32_t decode_utf8_at(std::string_view s, size_t pos, size_t& out_len) {
+    unsigned char c0 = static_cast<unsigned char>(s[pos]);
+    if (c0 < 0x80) {
+        out_len = 1;
+        return c0;
+    }
+    if ((c0 & 0xE0) == 0xC0 && pos + 1 < s.size()) {
+        out_len = 2;
+        return ((c0 & 0x1Fu) << 6) | (static_cast<unsigned char>(s[pos + 1]) & 0x3Fu);
+    }
+    if ((c0 & 0xF0) == 0xE0 && pos + 2 < s.size()) {
+        out_len = 3;
+        return ((c0 & 0x0Fu) << 12) |
+               ((static_cast<unsigned char>(s[pos + 1]) & 0x3Fu) << 6) |
+               (static_cast<unsigned char>(s[pos + 2]) & 0x3Fu);
+    }
+    if ((c0 & 0xF8) == 0xF0 && pos + 3 < s.size()) {
+        out_len = 4;
+        return ((c0 & 0x07u) << 18) |
+               ((static_cast<unsigned char>(s[pos + 1]) & 0x3Fu) << 12) |
+               ((static_cast<unsigned char>(s[pos + 2]) & 0x3Fu) << 6) |
+               (static_cast<unsigned char>(s[pos + 3]) & 0x3Fu);
+    }
+    out_len = 1;
+    return c0;
+}
+
+inline bool is_cjk_opening_punct(uint32_t cp) {
+    return cp == 0xFF08u || cp == 0x300Cu || cp == 0x300Eu || cp == 0x300Au || cp == 0x3010u;
+}
+
+inline bool is_cjk_closing_punct(uint32_t cp) {
+    return cp == 0xFF09u || cp == 0x3002u || cp == 0xFF0Cu || cp == 0x3001u ||
+           cp == 0xFF1Au || cp == 0xFF1Bu || cp == 0x300Du || cp == 0x300Fu ||
+           cp == 0x300Bu || cp == 0x3011u;
+}
+
+inline bool is_cjk_breakable(uint32_t cp) {
+    return (cp >= 0x2E80u && cp <= 0x9FFFu) ||
+           (cp >= 0xF900u && cp <= 0xFAFFu) ||
+           (cp >= 0xFF00u && cp <= 0xFFEFu);
+}
+
+} // namespace detail
+
+// Shared UTF-8 rich-text line wrapper supporting Latin/Vietnamese word wrapping, CJK wrapping,
+// explicit '\n' breaks, and seamless multi-word clickable hyperlinks across ImGui and BUI.
+inline AboutTextLayout layout_about_paragraphs(
+    const AboutContent& content,
+    float max_width,
+    float line_height,
+    float para_gap,
+    const std::function<float(std::string_view)>& measure_width,
+    bool center_align = true) {
+    AboutTextLayout result;
+    if (max_width <= 8.0f || content.paragraphs.empty()) return result;
+
+    struct Piece {
+        std::string text;
+        std::string url;
+    };
+    struct Cluster {
+        enum class Kind { Text, Space, Newline };
+        Kind kind = Kind::Text;
+        std::vector<Piece> pieces;
+    };
+
+    float cur_y = 0.0f;
+
+    for (size_t p_idx = 0; p_idx < content.paragraphs.size(); ++p_idx) {
+        const auto& para = content.paragraphs[p_idx];
+        if (p_idx > 0) {
+            cur_y += para_gap;
+        }
+
+        // 1. Tokenize spans into unbreakable word/CJK clusters
+        std::vector<Cluster> clusters;
+        Cluster cur;
+        bool cur_ends_with_open_cjk = false;
+        bool cur_ends_with_cjk = false;
+
+        auto append_piece = [&](Cluster& cl, std::string_view sv, const std::string& url) {
+            if (!cl.pieces.empty() && cl.pieces.back().url == url) {
+                cl.pieces.back().text.append(sv);
+            } else {
+                cl.pieces.push_back(Piece{std::string(sv), url});
+            }
+        };
+        auto flush_cur = [&]() {
+            if (!cur.pieces.empty()) {
+                clusters.push_back(std::move(cur));
+                cur = Cluster{};
+                cur_ends_with_open_cjk = false;
+                cur_ends_with_cjk = false;
+            }
+        };
+
+        for (const auto& span : para.spans) {
+            std::string_view sv = span.text;
+            size_t i = 0;
+            while (i < sv.size()) {
+                size_t len = 1;
+                uint32_t cp = detail::decode_utf8_at(sv, i, len);
+                std::string_view ch = sv.substr(i, len);
+                i += len;
+
+                if (cp == '\r') continue;
+                if (cp == '\n') {
+                    flush_cur();
+                    Cluster nl;
+                    nl.kind = Cluster::Kind::Newline;
+                    clusters.push_back(std::move(nl));
+                    continue;
+                }
+                if (cp == ' ' || cp == '\t') {
+                    flush_cur();
+                    Cluster sp;
+                    sp.kind = Cluster::Kind::Space;
+                    sp.pieces.push_back(Piece{" ", span.url});
+                    clusters.push_back(std::move(sp));
+                    continue;
+                }
+                if (detail::is_cjk_closing_punct(cp)) {
+                    append_piece(cur, ch, span.url);
+                    cur_ends_with_open_cjk = false;
+                    cur_ends_with_cjk = false;
+                    flush_cur();
+                    continue;
+                }
+                if (detail::is_cjk_opening_punct(cp)) {
+                    flush_cur();
+                    append_piece(cur, ch, span.url);
+                    cur_ends_with_open_cjk = true;
+                    cur_ends_with_cjk = false;
+                    continue;
+                }
+                if (detail::is_cjk_breakable(cp)) {
+                    if (!cur_ends_with_open_cjk) {
+                        flush_cur();
+                    }
+                    append_piece(cur, ch, span.url);
+                    cur_ends_with_open_cjk = false;
+                    cur_ends_with_cjk = true;
+                    continue;
+                }
+                // ASCII / Latin / Vietnamese character — break after preceding CJK ideograph
+                if (cur_ends_with_cjk) {
+                    flush_cur();
+                }
+                append_piece(cur, ch, span.url);
+                cur_ends_with_open_cjk = false;
+                cur_ends_with_cjk = false;
+            }
+        }
+        flush_cur();
+
+        // 2. Wrap clusters onto lines and emit merged LaidOutAboutChunks
+        std::vector<Piece> line_pieces;
+        float line_w = 0.0f;
+
+        auto measure_cluster = [&](const Cluster& cl) -> float {
+            std::string full;
+            for (const auto& pc : cl.pieces) full.append(pc.text);
+            return measure_width(full);
+        };
+
+        auto flush_line = [&]() {
+            // Trim trailing spaces so underlines/widths stay crisp
+            while (!line_pieces.empty()) {
+                auto& back = line_pieces.back().text;
+                while (!back.empty() && back.back() == ' ') back.pop_back();
+                if (back.empty()) {
+                    line_pieces.pop_back();
+                } else {
+                    break;
+                }
+            }
+            // Merge adjacent pieces sharing the same URL for continuous kerning & underline
+            std::vector<Piece> merged;
+            for (auto& pc : line_pieces) {
+                if (pc.text.empty()) continue;
+                if (!merged.empty() && merged.back().url == pc.url) {
+                    merged.back().text.append(pc.text);
+                } else {
+                    merged.push_back(std::move(pc));
+                }
+            }
+            float x = 0.0f;
+            size_t row_start = result.chunks.size();
+            for (auto& pc : merged) {
+                float w = measure_width(pc.text);
+                LaidOutAboutChunk ch;
+                ch.text = std::move(pc.text);
+                ch.url = std::move(pc.url);
+                ch.x = x;
+                ch.y = cur_y;
+                ch.w = w;
+                ch.h = line_height;
+                ch.is_link = !ch.url.empty();
+                ch.color = ch.is_link ? para.link_color : para.text_color;
+                ch.hover_color = para.hover_color;
+                result.chunks.push_back(std::move(ch));
+                x += w;
+            }
+            if (center_align && x < max_width) {
+                float offset = std::floor((max_width - x) * 0.5f);
+                for (size_t k = row_start; k < result.chunks.size(); ++k) {
+                    result.chunks[k].x += offset;
+                }
+            }
+            cur_y += line_height;
+            line_pieces.clear();
+            line_w = 0.0f;
+        };
+
+        for (const auto& cl : clusters) {
+            if (cl.kind == Cluster::Kind::Newline) {
+                flush_line();
+                continue;
+            }
+            if (cl.kind == Cluster::Kind::Space) {
+                if (line_pieces.empty()) continue; // never start a wrapped line with a space
+                float sw = measure_cluster(cl);
+                line_pieces.push_back(cl.pieces[0]);
+                line_w += sw;
+                continue;
+            }
+            float cw = measure_cluster(cl);
+            if (!line_pieces.empty() && line_w + cw > max_width) {
+                flush_line();
+            }
+            for (const auto& pc : cl.pieces) {
+                line_pieces.push_back(pc);
+            }
+            line_w += cw;
+        }
+        if (!line_pieces.empty()) {
+            flush_line();
+        }
+    }
+
+    result.total_height = cur_y;
+    return result;
 }
 
 } // namespace llk2::ui::common

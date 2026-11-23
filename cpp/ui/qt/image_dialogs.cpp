@@ -1,10 +1,64 @@
 #include "ui/qt/image_dialogs.hpp"
 
 #include <QFont>
+#include <QFrame>
+#include <QHBoxLayout>
+#include <QLabel>
 #include <QPainter>
+#include <QPixmap>
 #include <QRectF>
+#include <QVBoxLayout>
+#include <cstdio>
 
 namespace llk2::ui::qt {
+
+namespace {
+
+std::string html_escape(std::string_view sv) {
+    std::string out;
+    out.reserve(sv.size() + 16);
+    for (char c : sv) {
+        switch (c) {
+            case '&':  out.append("&amp;"); break;
+            case '<':  out.append("&lt;"); break;
+            case '>':  out.append("&gt;"); break;
+            case '"':  out.append("&quot;"); break;
+            case '\n': out.append("<br/>"); break;
+            case '\r': break;
+            default:   out.push_back(c); break;
+        }
+    }
+    return out;
+}
+
+std::string format_rgb(const common::AboutColor& c) {
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "rgb(%u,%u,%u)", c.r, c.g, c.b);
+    return buf;
+}
+
+QString build_paragraph_html(const common::AboutParagraph& para) {
+    const std::string text_rgb = format_rgb(para.text_color);
+    const std::string link_rgb = format_rgb(para.link_color);
+    std::string html = "<div align=\"center\" style=\"line-height: 138%; color: " + text_rgb + ";\">";
+    for (const auto& span : para.spans) {
+        if (span.url.empty()) {
+            html.append(html_escape(span.text));
+        } else {
+            html.append("<a href=\"");
+            html.append(html_escape(span.url));
+            html.append("\" style=\"color: ");
+            html.append(link_rgb);
+            html.append("; text-decoration: underline;\">");
+            html.append(html_escape(span.text));
+            html.append("</a>");
+        }
+    }
+    html.append("</div>");
+    return QString::fromStdString(html);
+}
+
+} // namespace
 
 QImage qimage_from_rgba(const media::RgbaSurface& surf) {
     if (!surf.valid()) {
@@ -102,6 +156,76 @@ void ImageSplashDialog::paintEvent(QPaintEvent* /*event*/) {
 void ImageSplashDialog::mousePressEvent(QMouseEvent* /*event*/) {
     // VB5 Form_Author_MouseDown (slot 53) & Form_Explain_MouseDown (slot 55): Unload Me on click
     accept();
+}
+
+AboutDialog::AboutDialog(const media::RgbaSurface& author_surf,
+                         const core::I18n& i18n,
+                         QWidget* parent)
+    : QDialog(parent, Qt::Dialog | Qt::WindowTitleHint | Qt::WindowCloseButtonHint | Qt::MSWindowsFixedSizeDialogHint) {
+    setWindowTitle(QString::fromStdString(i18n.tr("dialog.author.title")));
+    setModal(true);
+    setFixedSize(common::AboutLayout::kTotalW, common::AboutLayout::kTotalH);
+    setStyleSheet("QDialog { background-color: #000000; }");
+
+    auto* root = new QHBoxLayout(this);
+    root->setContentsMargins(0, 0, 0, 0);
+    root->setSpacing(0);
+
+    // Left: original Form_Author_Picture.jpg (370x310)
+    auto* img_lbl = new QLabel(this);
+    img_lbl->setFixedSize(common::AboutLayout::kImageW, common::AboutLayout::kImageH);
+    img_lbl->setStyleSheet("QLabel { background-color: #000000; }");
+    QImage img = qimage_from_rgba(author_surf);
+    if (!img.isNull()) {
+        img_lbl->setPixmap(QPixmap::fromImage(img).scaled(
+            common::AboutLayout::kImageW, common::AboutLayout::kImageH,
+            Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
+    }
+    root->addWidget(img_lbl);
+
+    // Middle neat margin + subtle vertical divider
+    root->addSpacing(common::AboutLayout::kDividerX - common::AboutLayout::kImageW);
+
+    auto* div_wrap = new QVBoxLayout();
+    div_wrap->setContentsMargins(0, common::AboutLayout::kDividerTop,
+                                 0, common::AboutLayout::kTotalH - common::AboutLayout::kDividerBottom);
+    div_wrap->setSpacing(0);
+    auto* divider = new QFrame(this);
+    divider->setFixedWidth(1);
+    divider->setStyleSheet("QFrame { background-color: #3A3A3A; border: none; }");
+    div_wrap->addWidget(divider);
+    root->addLayout(div_wrap);
+
+    root->addSpacing(common::AboutLayout::kTextLeft - common::AboutLayout::kDividerX - 1);
+
+    // Right: localized colored credits with clickable links, vertically centered
+    auto* right_col = new QVBoxLayout();
+    right_col->setContentsMargins(0, 18, common::AboutLayout::kTextRightPad, 18);
+    right_col->setSpacing(15);
+    right_col->addStretch(1);
+
+    const auto content = common::build_about_content(i18n);
+    QFont credit_font = font();
+    credit_font.setPixelSize(13);
+
+    for (const auto& para : content.paragraphs) {
+        auto* lbl = new QLabel(this);
+        lbl->setFont(credit_font);
+        lbl->setStyleSheet("QLabel { background: transparent; }");
+        lbl->setTextFormat(Qt::RichText);
+        lbl->setAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
+        lbl->setWordWrap(true);
+        lbl->setOpenExternalLinks(true);
+        lbl->setTextInteractionFlags(Qt::TextBrowserInteraction);
+        lbl->setText(build_paragraph_html(para));
+        connect(lbl, &QLabel::linkHovered, lbl, [lbl](const QString& link) {
+            lbl->setToolTip(link);
+        });
+        right_col->addWidget(lbl);
+    }
+
+    right_col->addStretch(1);
+    root->addLayout(right_col, 1);
 }
 
 } // namespace llk2::ui::qt

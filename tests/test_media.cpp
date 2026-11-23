@@ -182,7 +182,9 @@ static void test_renderer_and_audio_with_assets(const std::filesystem::path& ass
         "app.title", "menu.game", "menu.audio", "menu.settings", "menu.about",
         "menu.settings.language", "menu.settings.inspector", "menu.settings.theme",
         "dialog.explain.title", "dialog.btn.close", "inspector.title",
-        "inspector.highlight_hint", "msg.stage_clear.body", "msg.all_clear.body"
+        "inspector.hint_hidden", "inspector.highlight_hint",
+        "about.credits.original", "about.credits.sc_trans", "about.credits.remaster",
+        "msg.stage_clear.body", "msg.all_clear.body"
     };
     for (const char* lang : {"zh-TW", "zh-CN", "en", "vi"}) {
         assert(i18n.set_language(lang));
@@ -199,7 +201,29 @@ static void test_renderer_and_audio_with_assets(const std::filesystem::path& ass
         } else {
             assert(!ov.enabled);
         }
+
+        auto about = llk2::ui::common::build_about_content(i18n);
+        assert(about.paragraphs.size() == 3);
+        int link_count = 0;
+        for (const auto& p : about.paragraphs) {
+            for (const auto& sp : p.spans) {
+                if (!sp.url.empty()) ++link_count;
+            }
+        }
+        assert(link_count == 4);
+        auto laid = llk2::ui::common::layout_about_paragraphs(
+            about, static_cast<float>(llk2::ui::common::AboutLayout::kTextWidth),
+            18.0f, 14.0f, [](std::string_view sv) { return static_cast<float>(sv.size()) * 6.5f; });
+        assert(!laid.chunks.empty() && laid.total_height > 0.0f);
     }
+
+    // Verify hint coordinates stay hidden until reveal_hint is enabled
+    assert(i18n.set_language("en"));
+    auto snap_hidden = llk2::ui::common::build_inspector_snapshot(gs, audio, cfg, i18n, false);
+    auto snap_shown = llk2::ui::common::build_inspector_snapshot(gs, audio, cfg, i18n, true);
+    assert(snap_hidden.has_valid_hint);
+    assert(snap_hidden.next_hint == i18n.tr("inspector.hint_hidden"));
+    assert(snap_shown.next_hint.find("<->") != std::string::npos);
 }
 
 int main() {

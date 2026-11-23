@@ -680,6 +680,7 @@ void MainWindow::set_inspector_visible(bool visible) {
         act_inspector_->blockSignals(false);
     }
     if (visible) {
+        inspector_dlg_->refresh(game_state_, audio_, config_);
         refresh_inspector_and_hint();
         inspector_dlg_->show();
         inspector_dlg_->raise();
@@ -844,7 +845,7 @@ void MainWindow::on_show_explain() {
 }
 
 void MainWindow::on_show_author() {
-    ImageSplashDialog dlg(assets_.form_author(), QString::fromStdString(i18n_.tr("dialog.author.title")), this);
+    AboutDialog dlg(assets_.form_author(), i18n_, this);
     dlg.exec();
 }
 

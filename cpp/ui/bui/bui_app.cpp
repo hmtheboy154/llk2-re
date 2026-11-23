@@ -216,6 +216,41 @@ void BuiApp::ensure_explain_texture_for_lang() {
     explain_tex_lang_ = lang;
 }
 
+void BuiApp::ensure_author_texture() {
+    if (author_tex_ != 0) return;
+    const auto& surf = assets_.form_author();
+    if (surf.valid()) {
+        author_tex_ = BUI_texture_create(surf.width, surf.height, surf.pixels.data(), surf.width * 4);
+    }
+}
+
+void BuiApp::rebuild_author_layout(int card_w, int card_h) {
+    const float sx = static_cast<float>(card_w) / static_cast<float>(common::AboutLayout::kTotalW);
+    const float sy = static_cast<float>(card_h) / static_cast<float>(common::AboutLayout::kTotalH);
+    const float scale = std::min(sx, sy);
+    const char* fam = active_font_family();
+
+    author_font_sz_ = std::max(10.5f, 13.5f * scale);
+    const float line_h = author_font_sz_ * 1.38f;
+    const float para_gap = author_font_sz_ * 1.05f;
+    const auto content = common::build_about_content(i18n_);
+
+    author_layout_ = common::layout_about_paragraphs(
+        content,
+        static_cast<float>(common::AboutLayout::kTextWidth) * sx,
+        line_h,
+        para_gap,
+        [&](std::string_view sv) {
+            float tw = 0.0f;
+            BUI_text_measure(fam, 0, author_font_sz_, sv.data(), static_cast<int>(sv.size()), &tw);
+            return tw;
+        });
+
+    author_text_ox_ = static_cast<float>(common::AboutLayout::kTextLeft) * sx;
+    author_text_oy_ = std::max(12.0f * sy, (static_cast<float>(card_h) - author_layout_.total_height) * 0.5f);
+    author_hovered_url_.clear();
+}
+
 void BuiApp::build_ui_tree() {
     // Top Blender MenuBar header: 遊戲(G) - 背景聲音(B) - 設定(S) - 關於(A)
     menubar_ = BK_node_new("menubar");
@@ -351,7 +386,7 @@ void BuiApp::destroy_inspector_window() {
 void BuiApp::refresh_inspector_ui(bool force) {
     if (!insp_root_) return;
 
-    auto snap = common::build_inspector_snapshot(game_state_, audio_, config_, i18n_);
+    auto snap = common::build_inspector_snapshot(game_state_, audio_, config_, i18n_, show_hint_overlay_);
     std::string lines[9] = {
         i18n_.tr("inspector.mode") + ": " + snap.mode,
         i18n_.tr("inspector.stage") + ": " + snap.stage,
@@ -664,6 +699,10 @@ void BuiApp::shutdown() {
         BUI_texture_free(explain_tex_);
         explain_tex_ = 0;
     }
+    if (author_tex_ != 0) {
+        BUI_texture_free(author_tex_);
+        author_tex_ = 0;
+    }
     if (insp_ctx_) {
         BK_context_free(insp_ctx_);
         insp_ctx_ = nullptr;
@@ -847,6 +886,7 @@ void BuiApp::set_hint_highlight(bool enabled) {
     if (insp_chk_hint_) {
         BK_set_num(insp_chk_hint_, "value", enabled ? 1.0 : 0.0);
     }
+    refresh_inspector_ui();
     if (board_node_) {
         BK_node_invalidate(board_node_);
     }
@@ -1222,20 +1262,29 @@ void BuiApp::open_author_modal() {
     clear_modal_content();
     const auto& surf = assets_.form_author();
     if (!surf.valid()) return;
+    ensure_author_texture();
+
+    const int card_w = common::AboutLayout::kTotalW;
+    const int card_h = common::AboutLayout::kTotalH;
+    rebuild_author_layout(card_w, card_h);
 
     modal_dialog_ = BK_node_new("frame");
     BK_set_str(modal_dialog_, "title", i18n_.tr("dialog.author.title").c_str());
-    BK_set_num(modal_dialog_, "padding", 8);
+    BK_set_num(modal_dialog_, "padding", 6);
     BK_set_num(modal_dialog_, "events", 1);
 
-    modal_image_node_ = BK_node_new("label");
-    BK_node_set_image(modal_image_node_, surf.pixels.data(), surf.width, surf.height);
-    BK_set_num(modal_image_node_, "events", 1);
+    modal_image_node_ = BK_node_new("custom");
+    BKCustomClass cls{};
+    cls.event = &BuiApp::on_author_event;
+    cls.draw = &BuiApp::on_author_draw;
+    cls.natural_w = card_w;
+    cls.natural_h = card_h;
+    BK_custom_set(modal_image_node_, &cls, this);
     BK_node_add(modal_dialog_, modal_image_node_, -1);
     BK_geom_set_manager(modal_image_node_, BK_GEOM_PACK);
     BK_geom_set(modal_image_node_, "side", 0);
-    BK_geom_set(modal_image_node_, "reqwidth", surf.width);
-    BK_geom_set(modal_image_node_, "reqheight", surf.height);
+    BK_geom_set(modal_image_node_, "reqwidth", card_w);
+    BK_geom_set(modal_image_node_, "reqheight", card_h);
 
     BKNode* sep = BK_node_new("separator");
     BK_set_num(sep, "line", 1);
@@ -1589,6 +1638,7 @@ void BuiApp::on_inspector_emit(void* data, BKNode* node, int kind, void* ref, do
     if (kind == BK_EV_CHANGE && node == self->insp_chk_hint_) {
         bool checked = (BK_get_num(node, "value") != 0.0);
         self->show_hint_overlay_ = checked;
+        self->refresh_inspector_ui();
         if (self->board_node_) {
             BK_node_invalidate(self->board_node_);
         }
@@ -1824,6 +1874,114 @@ void BuiApp::on_explain_draw(void* data, BKNode* /*node*/, BuiRaster* r, const i
             BUI_raster_text(r, rx + rc.x * sx, cy, line.c_str(), static_cast<int>(line.size()), ctrl_sz, yellow);
         }
         cy += ctrl_lh;
+    }
+}
+
+int BuiApp::on_author_event(void* data, BKNode* node, const BKCustomEvent* e) {
+    auto* self = static_cast<BuiApp*>(data);
+    if (!self || !e) return 0;
+
+    auto hit_test_link = [&](float mx, float my) -> std::string {
+        for (const auto& ch : self->author_layout_.chunks) {
+            if (!ch.is_link) continue;
+            float x0 = self->author_text_ox_ + ch.x;
+            float y0 = self->author_text_oy_ + ch.y;
+            if (mx >= x0 && mx <= x0 + ch.w && my >= y0 && my <= y0 + ch.h) {
+                return ch.url;
+            }
+        }
+        return {};
+    };
+
+    if (e->type == BK_CUSTOM_MOTION) {
+        std::string hit = hit_test_link(e->x, e->y);
+        if (hit != self->author_hovered_url_) {
+            self->author_hovered_url_ = hit;
+            BK_custom_set_cursor(node, hit.empty() ? BK_CURSOR_DEFAULT : BK_CURSOR_HAND);
+            BK_set_str(node, "tooltip", hit.c_str());
+            BK_node_invalidate(node);
+        }
+        return 1;
+    }
+    if (e->type == BK_CUSTOM_LEAVE) {
+        if (!self->author_hovered_url_.empty()) {
+            self->author_hovered_url_.clear();
+            BK_custom_set_cursor(node, BK_CURSOR_DEFAULT);
+            BK_set_str(node, "tooltip", "");
+            BK_node_invalidate(node);
+        }
+        return 1;
+    }
+    if (e->type == BK_CUSTOM_PRESS && e->button == 1) {
+        std::string hit = hit_test_link(e->x, e->y);
+        if (!hit.empty()) {
+            common::open_external_url(hit);
+            return 1;
+        }
+        return 1;
+    }
+    return 0;
+}
+
+void BuiApp::on_author_draw(void* data, BKNode* /*node*/, BuiRaster* r, const int rect[4]) {
+    auto* self = static_cast<BuiApp*>(data);
+    if (!self || !r || rect[2] <= 0 || rect[3] <= 0) return;
+
+    const float rx = static_cast<float>(rect[0]);
+    const float ry = static_cast<float>(rect[1]);
+    const float rw = static_cast<float>(rect[2]);
+    const float rh = static_cast<float>(rect[3]);
+    const float sx = rw / static_cast<float>(common::AboutLayout::kTotalW);
+    const float sy = rh / static_cast<float>(common::AboutLayout::kTotalH);
+
+    // Unified pure-black card background matching Form_Author_Picture.jpg
+    const float black[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+    BUI_raster_fill_rect(r, rx, ry, rw, rh, black);
+
+    // Left: original Form_Author_Picture.jpg
+    if (self->author_tex_ != 0) {
+        const float img_w = static_cast<float>(common::AboutLayout::kImageW) * sx;
+        const float img_h = static_cast<float>(common::AboutLayout::kImageH) * sy;
+        const BuiMeshVertex vtx[4] = {
+            {rx,         ry,         0.0f, 0.0f, 0xFFFFFFFFu},
+            {rx + img_w, ry,         1.0f, 0.0f, 0xFFFFFFFFu},
+            {rx + img_w, ry + img_h, 1.0f, 1.0f, 0xFFFFFFFFu},
+            {rx,         ry + img_h, 0.0f, 1.0f, 0xFFFFFFFFu},
+        };
+        const uint16_t idx[6] = {0, 1, 2, 0, 2, 3};
+        BUI_raster_mesh(r, vtx, 4, idx, 6, 0, self->author_tex_, nullptr, 0.0f, 0.0f);
+    }
+
+    // Middle subtle vertical divider
+    const float div_col[4] = {58.0f / 255.0f, 58.0f / 255.0f, 58.0f / 255.0f, 1.0f};
+    const float div_x = rx + static_cast<float>(common::AboutLayout::kDividerX) * sx;
+    BUI_raster_line(r,
+                    div_x, ry + static_cast<float>(common::AboutLayout::kDividerTop) * sy,
+                    div_x, ry + static_cast<float>(common::AboutLayout::kDividerBottom) * sy,
+                    1.0f, div_col);
+
+    // Right: localized colored credits with clickable links
+    const char* fam = self->active_font_family();
+    BUI_raster_set_font(r, fam, 0);
+
+    for (const auto& ch : self->author_layout_.chunks) {
+        const bool is_hovered = ch.is_link && !self->author_hovered_url_.empty() &&
+                                (ch.url == self->author_hovered_url_);
+        const auto& c = is_hovered ? ch.hover_color : ch.color;
+        const float rgba[4] = {
+            static_cast<float>(c.r) / 255.0f,
+            static_cast<float>(c.g) / 255.0f,
+            static_cast<float>(c.b) / 255.0f,
+            1.0f
+        };
+        const float cx = rx + self->author_text_ox_ + ch.x;
+        const float base_y = ry + self->author_text_oy_ + ch.y + self->author_font_sz_ * 0.88f;
+        BUI_raster_text(r, cx, base_y, ch.text.c_str(), static_cast<int>(ch.text.size()),
+                        self->author_font_sz_, rgba);
+        if (ch.is_link) {
+            const float uy = base_y + 2.0f;
+            BUI_raster_line(r, cx, uy, cx + ch.w, uy, is_hovered ? 1.5f : 1.0f, rgba);
+        }
     }
 }
 

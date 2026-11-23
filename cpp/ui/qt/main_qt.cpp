@@ -20,6 +20,8 @@ int main(int argc, char* argv[]) {
 
     std::filesystem::path work_dir = std::filesystem::current_path();
     std::filesystem::path custom_assets_dir;
+    std::filesystem::path about_screenshot_path;
+    std::string forced_lang;
     bool smoke_test = false;
 
     for (int i = 1; i < argc; ++i) {
@@ -28,6 +30,10 @@ int main(int argc, char* argv[]) {
             custom_assets_dir = argv[++i];
         } else if (arg == "--smoke-test") {
             smoke_test = true;
+        } else if (arg == "--lang" && i + 1 < argc) {
+            forced_lang = argv[++i];
+        } else if (arg == "--screenshot-about" && i + 1 < argc) {
+            about_screenshot_path = argv[++i];
         }
     }
 
@@ -131,9 +137,19 @@ int main(int argc, char* argv[]) {
             explain_dlg.show();
             explain_dlg.close();
 
-            llk2::ui::qt::ImageSplashDialog author_dlg(assets.form_author(), "Author", &win);
+            if (!forced_lang.empty()) {
+                win.set_language(forced_lang);
+            }
+            llk2::ui::qt::AboutDialog author_dlg(assets.form_author(), i18n, &win);
             author_dlg.show();
+            author_dlg.repaint();
+            if (!about_screenshot_path.empty()) {
+                author_dlg.grab().save(QString::fromStdString(about_screenshot_path.string()));
+            }
             author_dlg.close();
+            if (!forced_lang.empty()) {
+                win.set_language("zh-TW");
+            }
 
             win.set_inspector_visible(true);
             win.set_hint_highlight(true);

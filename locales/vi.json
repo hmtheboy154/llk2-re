@@ -80,6 +80,7 @@
   "inspector.playing": "Đang phát",
   "inspector.stopped": "Đã dừng",
   "inspector.next_hint": "Gợi ý cặp nối",
+  "inspector.hint_hidden": "Đã ẩn",
   "inspector.highlight_hint": "Đánh dấu cặp gợi ý trên bàn",
   "inspector.shift.0": "Cố định",
   "inspector.shift.1": "Dồn lên trên",
@@ -95,6 +96,10 @@
   "rules.turn_2": "2 góc\nvuông",
   "rules.body": "Chọn hai ô giống nhau sao cho đường nối tránh các ô khác không quá 2 góc gấp khúc (xem minh họa) để xóa cặp ô và ghi điểm.\n\nXóa hết ô trước khi hết giờ để qua màn. Khi hết nước đi, bàn tự xáo trộn. Ban đầu có 10 lượt đổi, qua mỗi màn cộng thêm 1 lượt. Điểm cao sẽ lưu vào bảng xếp hạng.",
   "rules.controls": "Chuột trái = Chọn\nChuột phải = Hủy",
+
+  "about.credits.original": "Chương trình gốc được tạo bởi\n[CHEN PROGRAM STUDY](https://web.archive.org/web/20070615052321/http://myweb.hinet.net/home4/cps-chen/main.htm)",
+  "about.credits.sc_trans": "Bản dịch Tiếng Trung Giản Thể của Casm từ [LLK.cn](http://www.llk.cn/) (Trước đây là [www.LoveSnow.com](https://web.archive.org/web/20040729014651/http://www.lovesnow.com/)).",
+  "about.credits.remaster": "Phiên bản Remastered không chính thức bởi [HMTheBoy154](https://github.com/hmtheboy154)\nvới sự hỗ trợ của trợ lý AI.",
 
   "msg.stage_clear.title": "Qua màn",
   "msg.stage_clear.body": "Qua màn thành công! Chuẩn bị vào màn {level}.\nNăng lượng thời gian còn lại thưởng {bonus} điểm.",

@@ -80,6 +80,7 @@
   "inspector.playing": "Playing",
   "inspector.stopped": "Stopped",
   "inspector.next_hint": "Valid Pair Hint",
+  "inspector.hint_hidden": "Hidden",
   "inspector.highlight_hint": "Highlight Hint Pair on Board",
   "inspector.shift.0": "Static",
   "inspector.shift.1": "Shift Up",
@@ -95,6 +96,10 @@
   "rules.turn_2": "2 Turns",
   "rules.body": "Match two identical tiles with a clear path of at most 2 turns (see examples) to remove them and score points.\n\nClear all tiles before time runs out to reach the next stage. When no moves remain, the board shuffles automatically. You start with 10 shuffles and earn +1 per stage cleared. Top scores enter the leaderboard.",
   "rules.controls": "Left Click = Select\nRight Click = Cancel",
+
+  "about.credits.original": "Original program made by\n[CHEN PROGRAM STUDY](https://web.archive.org/web/20070615052321/http://myweb.hinet.net/home4/cps-chen/main.htm)",
+  "about.credits.sc_trans": "Simplified Chinese translation made by Casm of [LLK.cn](http://www.llk.cn/) (Previously [www.LoveSnow.com](https://web.archive.org/web/20040729014651/http://www.lovesnow.com/)).",
+  "about.credits.remaster": "Unofficial Remastered version made by [HMTheBoy154](https://github.com/hmtheboy154)\nwith the help of AI assistant.",
 
   "msg.stage_clear.title": "Stage Clear",
   "msg.stage_clear.body": "Stage cleared! Advancing to Stage {level}.\nRemaining time energy awards {bonus} bonus points.",

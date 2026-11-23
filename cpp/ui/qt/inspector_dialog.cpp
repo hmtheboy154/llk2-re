@@ -122,7 +122,7 @@ void InspectorDialog::retranslate() {
 void InspectorDialog::refresh(const core::GameState& gs,
                               const media::AudioEngine& audio,
                               const core::Config& cfg) {
-    auto snap = common::build_inspector_snapshot(gs, audio, cfg, i18n_);
+    auto snap = common::build_inspector_snapshot(gs, audio, cfg, i18n_, hint_highlight_enabled());
     val_mode_->setText(QString::fromStdString(snap.mode));
     val_stage_->setText(QString::fromStdString(snap.stage));
     val_tiles_->setText(QString::fromStdString(snap.tiles_left));

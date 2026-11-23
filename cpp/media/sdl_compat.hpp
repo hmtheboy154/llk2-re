@@ -27,4 +27,13 @@ inline uint64_t sdl_ticks_ms() {
     return static_cast<uint64_t>(SDL_GetTicks());
 }
 
+inline bool sdl_open_url(const char* url) {
+    if (!url || !*url) return false;
+#if defined(LLK2_USE_SDL3)
+    return SDL_OpenURL(url);
+#else
+    return SDL_OpenURL(url) == 0;
+#endif
+}
+
 } // namespace llk2::media
