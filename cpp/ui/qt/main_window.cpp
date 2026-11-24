@@ -320,6 +320,16 @@ void MainWindow::closeEvent(QCloseEvent* event) {
     QMainWindow::closeEvent(event);
 }
 
+void MainWindow::showEvent(QShowEvent* event) {
+    QMainWindow::showEvent(event);
+    if (!applied_initial_fullscreen_) {
+        applied_initial_fullscreen_ = true;
+        if (config_.borderless_fullscreen && !isFullScreen()) {
+            apply_window_scale();
+        }
+    }
+}
+
 void MainWindow::build_menus() {
     auto* mb = menuBar();
 
@@ -331,6 +341,7 @@ void MainWindow::build_menus() {
 
     // 1. 遊戲(&G)
     act_new_game_ = menu_game_->addAction("");
+    act_endless_game_ = menu_game_->addAction("");
     act_give_up_ = menu_game_->addAction("");
     menu_game_->addSeparator();
     act_records_ = menu_game_->addAction("");
@@ -338,6 +349,7 @@ void MainWindow::build_menus() {
     act_exit_ = menu_game_->addAction("");
 
     connect(act_new_game_, &QAction::triggered, this, &MainWindow::trigger_new_game);
+    connect(act_endless_game_, &QAction::triggered, this, &MainWindow::on_show_endless_dialog);
     connect(act_give_up_, &QAction::triggered, this, &MainWindow::trigger_give_up);
     connect(act_records_, &QAction::triggered, this, &MainWindow::on_show_records);
     connect(act_exit_, &QAction::triggered, this, &QWidget::close);
@@ -457,6 +469,13 @@ void MainWindow::build_menus() {
     connect(act_filter_nearest_, &QAction::triggered, this, [this]() { set_scale_filter(core::ScaleFilter::Nearest); });
     connect(act_filter_bilinear_, &QAction::triggered, this, [this]() { set_scale_filter(core::ScaleFilter::Bilinear); });
 
+    act_fullscreen_ = menu_settings_->addAction("");
+    act_fullscreen_->setCheckable(true);
+    act_fullscreen_->setShortcuts({QKeySequence(Qt::Key_F11), QKeySequence(Qt::ALT | Qt::Key_Return)});
+    connect(act_fullscreen_, &QAction::triggered, this, [this](bool checked) {
+        set_borderless_fullscreen(checked);
+    });
+
     menu_settings_->addSeparator();
 
     // 3e. Legacy d4s.hst Import / Export
@@ -491,6 +510,7 @@ void MainWindow::retranslate_ui() {
 
     menu_game_->setTitle(qtr("menu.game"));
     act_new_game_->setText(qtr("menu.game.new"));
+    act_endless_game_->setText(qtr("menu.game.endless"));
     act_give_up_->setText(qtr("menu.game.giveup"));
     act_records_->setText(qtr("menu.game.record"));
     act_exit_->setText(qtr("menu.game.exit"));
@@ -524,6 +544,7 @@ void MainWindow::retranslate_ui() {
     act_scale_free_->setText(qtr("menu.settings.scale_free"));
     act_filter_nearest_->setText(qtr("menu.settings.filter_nearest"));
     act_filter_bilinear_->setText(qtr("menu.settings.filter_bilinear"));
+    act_fullscreen_->setText(qtr("menu.settings.fullscreen"));
 
     act_import_hst_->setText(qtr("menu.settings.import_hst"));
     act_export_hst_->setText(qtr("menu.settings.export_hst"));
@@ -542,6 +563,7 @@ void MainWindow::retranslate_ui() {
 void MainWindow::sync_menu_states() {
     bool on_title = game_state_.in_title_screen();
     act_new_game_->setEnabled(on_title);
+    act_endless_game_->setEnabled(on_title);
     act_give_up_->setEnabled(!on_title);
 
     act_music_->setChecked(config_.music_on);
@@ -590,9 +612,31 @@ void MainWindow::sync_menu_states() {
     } else {
         act_filter_nearest_->setChecked(true);
     }
+
+    if (act_fullscreen_) {
+        act_fullscreen_->blockSignals(true);
+        act_fullscreen_->setChecked(config_.borderless_fullscreen);
+        act_fullscreen_->blockSignals(false);
+    }
 }
 
 void MainWindow::apply_window_scale() {
+    if (config_.borderless_fullscreen) {
+        board_widget_->setMinimumSize(1, 1);
+        board_widget_->setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
+        setMinimumSize(1, 1);
+        setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
+        if (isVisible() && !isFullScreen()) {
+            showFullScreen();
+        }
+        board_widget_->update();
+        return;
+    }
+
+    if (isFullScreen()) {
+        showNormal();
+    }
+
     if (config_.scale_mode == core::WindowScaleMode::FreeAspect) {
         board_widget_->setMinimumSize(core::GameState::kCanvasWidth / 2, core::GameState::kCanvasHeight / 2);
         board_widget_->setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
@@ -626,6 +670,23 @@ void MainWindow::trigger_new_game() {
     refresh_inspector_and_hint();
 }
 
+void MainWindow::trigger_endless_game(const core::EndlessConfig& cfg) {
+    last_endless_cfg_ = cfg;
+    uint64_t now = now_ticks_ms();
+    game_state_.start_endless_game(cfg, now);
+    sync_menu_states();
+    renderer_.render(game_state_);
+    board_widget_->sync_full(false);
+    refresh_inspector_and_hint();
+}
+
+void MainWindow::on_show_endless_dialog() {
+    EndlessDialog dlg(i18n_, last_endless_cfg_, this);
+    if (dlg.exec() == QDialog::Accepted) {
+        trigger_endless_game(dlg.selected_config());
+    }
+}
+
 void MainWindow::trigger_give_up() {
     game_state_.give_up_game();
     sync_menu_states();
@@ -644,6 +705,7 @@ void MainWindow::set_language(const std::string& lang_code) {
 
 void MainWindow::set_scale_mode(core::WindowScaleMode mode) {
     config_.scale_mode = mode;
+    config_.borderless_fullscreen = false;
     sync_menu_states();
     apply_window_scale();
     save_config_and_scores();
@@ -653,6 +715,13 @@ void MainWindow::set_scale_filter(core::ScaleFilter filter) {
     config_.scale_filter = filter;
     sync_menu_states();
     board_widget_->update();
+    save_config_and_scores();
+}
+
+void MainWindow::set_borderless_fullscreen(bool enabled) {
+    config_.borderless_fullscreen = enabled;
+    sync_menu_states();
+    apply_window_scale();
     save_config_and_scores();
 }
 
@@ -756,10 +825,8 @@ void MainWindow::process_game_events(uint64_t now_ms) {
 
             case core::GameEventType::StageClearModal: {
                 QString title = QString::fromStdString(i18n_.tr("msg.stage_clear.title"));
-                QString body = QString::fromStdString(i18n_.format("msg.stage_clear.body", {
-                    {"level", std::to_string(ev.next_level_display)},
-                    {"bonus", std::to_string(ev.bonus)}
-                }));
+                QString body = QString::fromStdString(
+                    common::format_stage_clear_body(ev, game_state_.no_time_limit(), i18n_));
                 QMessageBox::information(this, title, body);
                 game_state_.acknowledge_modal(now_ticks_ms());
                 sync_menu_states();
@@ -777,7 +844,9 @@ void MainWindow::process_game_events(uint64_t now_ms) {
                     {"score", std::to_string(total_sc)}
                 }));
                 QMessageBox::information(this, title, body);
-                check_and_show_high_score(ev.total_score);
+                if (ev.records_score) {
+                    check_and_show_high_score(ev.total_score);
+                }
                 game_state_.acknowledge_modal(now_ticks_ms());
                 sync_menu_states();
                 renderer_.render(game_state_);
@@ -789,7 +858,9 @@ void MainWindow::process_game_events(uint64_t now_ms) {
                 QString title = QString::fromStdString(i18n_.tr("msg.no_moves.title"));
                 QString body = QString::fromStdString(i18n_.tr("msg.no_moves.body"));
                 QMessageBox::information(this, title, body);
-                check_and_show_high_score(ev.total_score);
+                if (ev.records_score) {
+                    check_and_show_high_score(ev.total_score);
+                }
                 game_state_.acknowledge_modal(now_ticks_ms());
                 sync_menu_states();
                 renderer_.render(game_state_);
@@ -798,14 +869,13 @@ void MainWindow::process_game_events(uint64_t now_ms) {
             }
 
             case core::GameEventType::TimeoutGameOverModal: {
-                int total_sc = static_cast<int>(std::lround(ev.total_score));
                 QString title = QString::fromStdString(i18n_.tr("msg.timeout.title"));
-                QString body = QString::fromStdString(i18n_.format("msg.timeout.body", {
-                    {"bonus", std::to_string(ev.bonus)},
-                    {"score", std::to_string(total_sc)}
-                }));
+                QString body = QString::fromStdString(
+                    common::format_timeout_body(ev, game_state_.unlimited_shuffle(), i18n_));
                 QMessageBox::information(this, title, body);
-                check_and_show_high_score(ev.total_score);
+                if (ev.records_score) {
+                    check_and_show_high_score(ev.total_score);
+                }
                 game_state_.acknowledge_modal(now_ticks_ms());
                 sync_menu_states();
                 renderer_.render(game_state_);

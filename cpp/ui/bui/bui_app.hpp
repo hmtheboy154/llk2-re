@@ -11,6 +11,7 @@
 
 #include "BUI_kit.h"
 
+#include <array>
 #include <cstdint>
 #include <deque>
 #include <filesystem>
@@ -48,16 +49,19 @@ public:
 
     // Programmatic actions (shared by menus and smoke test)
     void trigger_new_game();
+    void trigger_endless_game(const core::EndlessConfig& cfg);
     void trigger_give_up();
     void set_language(const std::string& lang_code);
     void set_scale_mode(core::WindowScaleMode mode);
     void set_scale_filter(core::ScaleFilter filter);
+    void set_borderless_fullscreen(bool enabled);
     void set_midi_backend(core::MidiBackend backend);
     void set_midi_track_enabled(int track_id, bool enabled);
     void set_blender_theme(const std::string& theme_name);
     void set_inspector_visible(bool visible);
     void set_hint_highlight(bool enabled);
 
+    void open_endless_modal();
     void open_records_modal(int editable_rank = -1);
     void open_explain_modal();
     void open_author_modal();
@@ -75,6 +79,7 @@ private:
     enum class MenuAction : uintptr_t {
         None = 0,
         NewGame,
+        EndlessGame,
         GiveUp,
         Records,
         Exit,
@@ -94,6 +99,7 @@ private:
         ScaleFree,
         FilterNearest,
         FilterBilinear,
+        ToggleFullscreen,
         ThemeDark,
         ThemeLight,
         ImportHst,
@@ -107,6 +113,7 @@ private:
     enum class ModalKind {
         None,
         GameEvent,
+        EndlessSetup,
         Records,
         ExplainImage,
         AuthorImage
@@ -115,7 +122,9 @@ private:
     enum class DeferredAction {
         CloseModal,
         AcceptGameModal,
+        AcceptEndlessModal,
         AcceptRecordsModal,
+        OpenEndless,
         OpenExplain,
         OpenAuthor,
         OpenRecords,
@@ -148,6 +157,8 @@ private:
     void clear_modal_content();
     void show_game_event_modal(const core::GameEvent& ev);
     void accept_game_event_modal();
+    void accept_endless_modal();
+    void sync_endless_modal_controls();
     void accept_records_modal();
 
     void on_import_hst();
@@ -199,9 +210,19 @@ private:
     BKNode* modal_backdrop_ = nullptr;
     BKNode* modal_dialog_ = nullptr;
     BKNode* modal_ok_btn_ = nullptr;
+    BKNode* modal_cancel_btn_ = nullptr;
     BKNode* modal_name_edit_ = nullptr;
     BKNode* modal_rank_name_lbl_ = nullptr;
     BKNode* modal_image_node_ = nullptr;
+
+    // Endless Mode modal widgets
+    BKNode* endless_rb_all_ = nullptr;
+    BKNode* endless_rb_specific_ = nullptr;
+    BKNode* endless_chk_shuffle_ = nullptr;
+    BKNode* endless_chk_no_time_ = nullptr;
+    BKNode* endless_chk_unlim_shuffle_ = nullptr;
+    std::array<BKNode*, 7> endless_chk_levels_{};
+    core::EndlessConfig endless_draft_{};
 
     BKContext* ctx_ = nullptr;
     BKWindow* window_ = nullptr;

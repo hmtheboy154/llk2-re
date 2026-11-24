@@ -433,22 +433,82 @@ inline std::string localized_backend_name(core::MidiBackend backend, const core:
     return "?";
 }
 
+inline std::string format_endless_stage_label(int level_idx, const core::I18n& i18n) {
+    int clamped = std::clamp(level_idx, 0, 6);
+    std::string shift = i18n.tr("inspector.shift." + std::to_string(clamped));
+    return i18n.format("dialog.endless.stage_fmt", {
+        {"num", std::to_string(clamped + 1)},
+        {"shift", shift}
+    });
+}
+
+inline std::string format_stage_clear_body(const core::GameEvent& ev,
+                                           bool no_time_limit,
+                                           const core::I18n& i18n) {
+    if (ev.is_endless) {
+        std::string shift = i18n.tr("inspector.shift." + std::to_string(std::clamp(ev.next_shift_level, 0, 6)));
+        if (no_time_limit) {
+            return i18n.format("msg.endless_clear_notime.body", {
+                {"stage", std::to_string(ev.next_level_display)},
+                {"shift", shift}
+            });
+        }
+        return i18n.format("msg.endless_clear.body", {
+            {"stage", std::to_string(ev.next_level_display)},
+            {"shift", shift},
+            {"bonus", std::to_string(ev.bonus)}
+        });
+    }
+    return i18n.format("msg.stage_clear.body", {
+        {"level", std::to_string(ev.next_level_display)},
+        {"bonus", std::to_string(ev.bonus)}
+    });
+}
+
+inline std::string format_timeout_body(const core::GameEvent& ev,
+                                       bool unlimited_shuffle,
+                                       const core::I18n& i18n) {
+    int total_sc = static_cast<int>(std::lround(ev.total_score));
+    if (ev.is_endless && unlimited_shuffle) {
+        return i18n.format("msg.timeout_unlim_shuffle.body", {
+            {"score", std::to_string(total_sc)}
+        });
+    }
+    return i18n.format("msg.timeout.body", {
+        {"bonus", std::to_string(ev.bonus)},
+        {"score", std::to_string(total_sc)}
+    });
+}
+
 inline InspectorSnapshot build_inspector_snapshot(const core::GameState& gs,
                                                   const media::AudioEngine& audio,
                                                   const core::Config& cfg,
                                                   const core::I18n& i18n,
                                                   bool reveal_hint = false) {
     InspectorSnapshot snap;
-    snap.mode = gs.in_title_screen() ? i18n.tr("inspector.mode.title")
-                                     : i18n.tr("inspector.mode.playing");
+    if (gs.in_title_screen()) {
+        snap.mode = i18n.tr("inspector.mode.title");
+    } else if (gs.is_endless()) {
+        snap.mode = i18n.tr("inspector.mode.endless");
+    } else {
+        snap.mode = i18n.tr("inspector.mode.playing");
+    }
 
     std::string shift_key = "inspector.shift." + std::to_string(std::clamp(gs.level(), 0, 6));
-    snap.stage = std::to_string(gs.level() + 1) + " / 7 (" + i18n.tr(shift_key) + ")";
+    if (gs.is_endless() && !gs.in_title_screen()) {
+        snap.stage = "#" + std::to_string(std::max(1, gs.endless_stage_count())) +
+                     " (" + i18n.tr(shift_key) + ")";
+    } else {
+        snap.stage = std::to_string(gs.level() + 1) + " / 7 (" + i18n.tr(shift_key) + ")";
+    }
     snap.tiles_left = std::to_string(gs.board().tiles_left()) + " / 144";
-    snap.lives_score = i18n.tr("inspector.lives") + ": " + std::to_string(gs.lives()) +
+    std::string lives_str = gs.unlimited_shuffle() ? i18n.tr("inspector.lives_unlimited")
+                                                   : std::to_string(gs.lives());
+    snap.lives_score = i18n.tr("inspector.lives") + ": " + lives_str +
                        "   " + i18n.tr("inspector.score") + ": " +
                        std::to_string(static_cast<int>(std::lround(gs.score())));
-    snap.time_left = std::to_string(gs.remaining_seconds()) + " s";
+    snap.time_left = gs.no_time_limit() ? i18n.tr("inspector.time_unlimited")
+                                        : (std::to_string(gs.remaining_seconds()) + " s");
     snap.audio_backend = localized_backend_name(cfg.midi_backend, i18n);
     snap.soundfont = audio.active_soundfont_name();
 

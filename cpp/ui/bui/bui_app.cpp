@@ -305,6 +305,8 @@ void BuiApp::build_ui_tree() {
 
     // Keyboard shortcuts
     BK_bind(ctx_, "F2", reinterpret_cast<void*>(static_cast<uintptr_t>(MenuAction::NewGame)));
+    BK_bind(ctx_, "F11", reinterpret_cast<void*>(static_cast<uintptr_t>(MenuAction::ToggleFullscreen)));
+    BK_bind(ctx_, "alt+Return", reinterpret_cast<void*>(static_cast<uintptr_t>(MenuAction::ToggleFullscreen)));
     BK_bind(ctx_, "F12", reinterpret_cast<void*>(static_cast<uintptr_t>(MenuAction::ToggleInspector)));
 }
 
@@ -433,6 +435,7 @@ void BuiApp::rebuild_menus() {
     // 1. 遊戲(G)
     std::string t_game = tr_clean(i18n_, "menu.game");
     std::string s_new = tr_clean(i18n_, "menu.game.new");
+    std::string s_endless = tr_clean(i18n_, "menu.game.endless");
     std::string s_giveup = tr_clean(i18n_, "menu.game.giveup");
     std::string s_record = tr_clean(i18n_, "menu.game.record");
     std::string s_exit = tr_clean(i18n_, "menu.game.exit");
@@ -440,6 +443,7 @@ void BuiApp::rebuild_menus() {
     BK_set_str(mb_game_, "text", t_game.c_str());
     BKMenuSpec game_items[] = {
         make_item(s_new, static_cast<uintptr_t>(MenuAction::NewGame), -1, on_title, "F2"),
+        make_item(s_endless, static_cast<uintptr_t>(MenuAction::EndlessGame), -1, on_title),
         make_item(s_giveup, static_cast<uintptr_t>(MenuAction::GiveUp), -1, !on_title),
         make_sep(),
         make_item(s_record, static_cast<uintptr_t>(MenuAction::Records)),
@@ -530,6 +534,7 @@ void BuiApp::rebuild_menus() {
         make_item(s_light, static_cast<uintptr_t>(MenuAction::ThemeLight), current_theme_ == "light" ? 1 : 0),
     };
 
+    std::string s_fs = tr_clean(i18n_, "menu.settings.fullscreen");
     std::string s_imp = i18n_.tr("menu.settings.import_hst");
     std::string s_exp = i18n_.tr("menu.settings.export_hst");
     std::string s_insp = i18n_.tr("menu.settings.inspector");
@@ -542,6 +547,8 @@ void BuiApp::rebuild_menus() {
         make_submenu(s_device, device_sub, 5),
         make_sep(),
         make_submenu(s_scale, scale_sub, 8),
+        make_item(s_fs, static_cast<uintptr_t>(MenuAction::ToggleFullscreen),
+                  config_.borderless_fullscreen ? 1 : 0, true, "F11"),
         make_submenu(s_theme, theme_sub, 2),
         make_sep(),
         make_item(s_imp, static_cast<uintptr_t>(MenuAction::ImportHst)),
@@ -582,18 +589,32 @@ void BuiApp::apply_window_scale() {
     int mb_h = mb_sz[1];
 
     if (window_) {
-        if (config_.scale_mode == core::WindowScaleMode::FreeAspect) {
+        if (config_.borderless_fullscreen) {
             BK_window_wm(window_, "resizable", 1, 1);
-            BK_window_wm(window_, "minsize",
-                         core::GameState::kCanvasWidth / 2,
-                         core::GameState::kCanvasHeight / 2 + mb_h);
+            BK_window_wm(window_, "minsize", 320, 240);
+            BK_window_wm(window_, "override", 1, 0);
+            double sw = 0.0, sh = 0.0;
+            if (BK_window_wm_get(window_, "screen", &sw, &sh) && sw > 0.0 && sh > 0.0) {
+                BK_window_wm(window_, "pos", 0, 0);
+                BK_window_set_size(window_, static_cast<int>(sw), static_cast<int>(sh));
+            }
+            BK_window_wm(window_, "state", 3, 0);
         } else {
-            float factor = config_.scale_factor();
-            int target_w = static_cast<int>(std::lround(core::GameState::kCanvasWidth * factor));
-            int target_h = static_cast<int>(std::lround(core::GameState::kCanvasHeight * factor)) + mb_h;
-            BK_window_wm(window_, "resizable", 0, 0);
-            BK_window_wm(window_, "minsize", target_w, target_h);
-            BK_window_set_size(window_, target_w, target_h);
+            BK_window_wm(window_, "state", 0, 0);
+            BK_window_wm(window_, "override", 0, 0);
+            if (config_.scale_mode == core::WindowScaleMode::FreeAspect) {
+                BK_window_wm(window_, "resizable", 1, 1);
+                BK_window_wm(window_, "minsize",
+                             core::GameState::kCanvasWidth / 2,
+                             core::GameState::kCanvasHeight / 2 + mb_h);
+            } else {
+                float factor = config_.scale_factor();
+                int target_w = static_cast<int>(std::lround(core::GameState::kCanvasWidth * factor));
+                int target_h = static_cast<int>(std::lround(core::GameState::kCanvasHeight * factor)) + mb_h;
+                BK_window_wm(window_, "resizable", 0, 0);
+                BK_window_wm(window_, "minsize", target_w, target_h);
+                BK_window_set_size(window_, target_w, target_h);
+            }
         }
     }
     if (board_node_) {
@@ -759,8 +780,14 @@ void BuiApp::flush_deferred_actions() {
             case DeferredAction::AcceptGameModal:
                 accept_game_event_modal();
                 break;
+            case DeferredAction::AcceptEndlessModal:
+                accept_endless_modal();
+                break;
             case DeferredAction::AcceptRecordsModal:
                 accept_records_modal();
+                break;
+            case DeferredAction::OpenEndless:
+                open_endless_modal();
                 break;
             case DeferredAction::OpenExplain:
                 open_explain_modal();
@@ -784,6 +811,17 @@ void BuiApp::flush_deferred_actions() {
 void BuiApp::trigger_new_game() {
     close_active_modal();
     game_state_.start_new_game(common::now_steady_ms());
+    rebuild_menus();
+    renderer_.render(game_state_);
+    board_dirty_ = true;
+    upload_board_texture();
+    refresh_inspector_ui();
+}
+
+void BuiApp::trigger_endless_game(const core::EndlessConfig& cfg) {
+    endless_draft_ = cfg;
+    close_active_modal();
+    game_state_.start_endless_game(cfg, common::now_steady_ms());
     rebuild_menus();
     renderer_.render(game_state_);
     board_dirty_ = true;
@@ -816,6 +854,7 @@ void BuiApp::set_language(const std::string& lang_code) {
 
 void BuiApp::set_scale_mode(core::WindowScaleMode mode) {
     config_.scale_mode = mode;
+    config_.borderless_fullscreen = false;
     rebuild_menus();
     apply_window_scale();
     save_config_and_scores();
@@ -827,6 +866,13 @@ void BuiApp::set_scale_filter(core::ScaleFilter filter) {
     if (board_node_) {
         BK_node_invalidate(board_node_);
     }
+    save_config_and_scores();
+}
+
+void BuiApp::set_borderless_fullscreen(bool enabled) {
+    config_.borderless_fullscreen = enabled;
+    rebuild_menus();
+    apply_window_scale();
     save_config_and_scores();
 }
 
@@ -901,9 +947,16 @@ void BuiApp::clear_modal_content() {
         modal_dialog_ = nullptr;
     }
     modal_ok_btn_ = nullptr;
+    modal_cancel_btn_ = nullptr;
     modal_name_edit_ = nullptr;
     modal_rank_name_lbl_ = nullptr;
     modal_image_node_ = nullptr;
+    endless_rb_all_ = nullptr;
+    endless_rb_specific_ = nullptr;
+    endless_chk_shuffle_ = nullptr;
+    endless_chk_no_time_ = nullptr;
+    endless_chk_unlim_shuffle_ = nullptr;
+    endless_chk_levels_.fill(nullptr);
 }
 
 void BuiApp::close_active_modal() {
@@ -927,10 +980,7 @@ void BuiApp::show_game_event_modal(const core::GameEvent& ev) {
     switch (ev.type) {
         case core::GameEventType::StageClearModal:
             title = i18n_.tr("msg.stage_clear.title");
-            body = i18n_.format("msg.stage_clear.body", {
-                {"level", std::to_string(ev.next_level_display)},
-                {"bonus", std::to_string(ev.bonus)}
-            });
+            body = common::format_stage_clear_body(ev, game_state_.no_time_limit(), i18n_);
             break;
 
         case core::GameEventType::AllStagesClearModal: {
@@ -950,12 +1000,8 @@ void BuiApp::show_game_event_modal(const core::GameEvent& ev) {
             break;
 
         case core::GameEventType::TimeoutGameOverModal: {
-            int total_sc = static_cast<int>(std::lround(ev.total_score));
             title = i18n_.tr("msg.timeout.title");
-            body = i18n_.format("msg.timeout.body", {
-                {"bonus", std::to_string(ev.bonus)},
-                {"score", std::to_string(total_sc)}
-            });
+            body = common::format_timeout_body(ev, game_state_.unlimited_shuffle(), i18n_);
             break;
         }
 
@@ -1025,7 +1071,8 @@ void BuiApp::accept_game_event_modal() {
     core::GameEvent ev = pending_game_modals_.front();
     pending_game_modals_.pop_front();
 
-    bool check_hs = (ev.type == core::GameEventType::AllStagesClearModal ||
+    bool check_hs = ev.records_score &&
+                    (ev.type == core::GameEventType::AllStagesClearModal ||
                      ev.type == core::GameEventType::NoMovesGameOverModal ||
                      ev.type == core::GameEventType::TimeoutGameOverModal);
 
@@ -1051,6 +1098,185 @@ void BuiApp::accept_game_event_modal() {
     board_dirty_ = true;
     upload_board_texture();
     refresh_inspector_ui();
+}
+
+void BuiApp::sync_endless_modal_controls() {
+    if (active_modal_ != ModalKind::EndlessSetup) return;
+    bool is_specific = (endless_draft_.type == core::EndlessModeType::SpecificLevels);
+    if (endless_rb_all_) BK_set_num(endless_rb_all_, "value", is_specific ? 0.0 : 1.0);
+    if (endless_rb_specific_) BK_set_num(endless_rb_specific_, "value", is_specific ? 1.0 : 0.0);
+
+    int selected_cnt = 0;
+    for (int i = 0; i < 7; ++i) {
+        bool checked = (endless_draft_.level_mask & (1u << i)) != 0;
+        if (checked) ++selected_cnt;
+        if (endless_chk_levels_[i]) {
+            BK_set_num(endless_chk_levels_[i], "value", checked ? 1.0 : 0.0);
+            BK_set_num(endless_chk_levels_[i], "enabled", is_specific ? 1.0 : 0.0);
+        }
+    }
+    if (endless_chk_shuffle_) {
+        BK_set_num(endless_chk_shuffle_, "value", endless_draft_.shuffle ? 1.0 : 0.0);
+        BK_set_num(endless_chk_shuffle_, "enabled", (!is_specific || selected_cnt > 1) ? 1.0 : 0.0);
+    }
+    if (endless_chk_no_time_) {
+        BK_set_num(endless_chk_no_time_, "value", endless_draft_.no_time_limit ? 1.0 : 0.0);
+    }
+    if (endless_chk_unlim_shuffle_) {
+        BK_set_num(endless_chk_unlim_shuffle_, "value", endless_draft_.unlimited_shuffle ? 1.0 : 0.0);
+    }
+    if (modal_ok_btn_) {
+        BK_set_num(modal_ok_btn_, "enabled", (!is_specific || selected_cnt > 0) ? 1.0 : 0.0);
+    }
+    if (modal_dialog_) {
+        BK_node_invalidate(modal_dialog_);
+    }
+}
+
+void BuiApp::open_endless_modal() {
+    clear_modal_content();
+
+    modal_dialog_ = BK_node_new("frame");
+    BK_set_str(modal_dialog_, "title", i18n_.tr("dialog.endless.title").c_str());
+    BK_set_num(modal_dialog_, "padding", 14);
+    BK_set_num(modal_dialog_, "events", 1);
+
+    auto add_sep = [&](BKNode* parent) {
+        BKNode* s = BK_node_new("separator");
+        BK_set_num(s, "line", 1);
+        BK_set_num(s, "factor", 0.35);
+        BK_node_add(parent, s, -1);
+        BK_geom_set_manager(s, BK_GEOM_PACK);
+        BK_geom_set(s, "side", 0);
+        BK_geom_set(s, "fill", 1);
+        BK_geom_set(s, "pady0", 6);
+        BK_geom_set(s, "pady1", 6);
+    };
+
+    BKNode* note = BK_node_new("label");
+    BK_set_str(note, "text", i18n_.tr("dialog.endless.note").c_str());
+    BK_node_add(modal_dialog_, note, -1);
+    BK_geom_set_manager(note, BK_GEOM_PACK);
+    BK_geom_set(note, "side", 0);
+    BK_geom_set(note, "fill", 1);
+    BK_geom_set(note, "pady1", 4);
+
+    add_sep(modal_dialog_);
+
+    endless_rb_all_ = BK_node_new("radio");
+    BK_set_str(endless_rb_all_, "label", i18n_.tr("dialog.endless.all_levels").c_str());
+    BK_node_add(modal_dialog_, endless_rb_all_, -1);
+    BK_geom_set_manager(endless_rb_all_, BK_GEOM_PACK);
+    BK_geom_set(endless_rb_all_, "side", 0);
+    BK_geom_set(endless_rb_all_, "fill", 1);
+    BK_geom_set(endless_rb_all_, "pady1", 3);
+
+    endless_chk_shuffle_ = BK_node_new("checkbox");
+    BK_set_str(endless_chk_shuffle_, "label", i18n_.tr("dialog.endless.shuffle").c_str());
+    BK_node_add(modal_dialog_, endless_chk_shuffle_, -1);
+    BK_geom_set_manager(endless_chk_shuffle_, BK_GEOM_PACK);
+    BK_geom_set(endless_chk_shuffle_, "side", 0);
+    BK_geom_set(endless_chk_shuffle_, "fill", 1);
+    BK_geom_set(endless_chk_shuffle_, "padx0", 22);
+    BK_geom_set(endless_chk_shuffle_, "pady1", 6);
+
+    endless_rb_specific_ = BK_node_new("radio");
+    BK_set_str(endless_rb_specific_, "label", i18n_.tr("dialog.endless.specific_levels").c_str());
+    BK_node_add(modal_dialog_, endless_rb_specific_, -1);
+    BK_geom_set_manager(endless_rb_specific_, BK_GEOM_PACK);
+    BK_geom_set(endless_rb_specific_, "side", 0);
+    BK_geom_set(endless_rb_specific_, "fill", 1);
+    BK_geom_set(endless_rb_specific_, "pady1", 4);
+
+    BKNode* grid = BK_node_new("frame");
+    BK_set_num(grid, "padding", 0);
+    BK_frame_grid_weight(grid, 1, 0, 1.0, 0);
+    BK_frame_grid_weight(grid, 1, 1, 1.0, 0);
+    for (int i = 0; i < 7; ++i) {
+        BKNode* chk = BK_node_new("checkbox");
+        std::string txt = common::format_endless_stage_label(i, i18n_);
+        BK_set_str(chk, "label", txt.c_str());
+        BK_node_add(grid, chk, -1);
+        BK_geom_set_manager(chk, BK_GEOM_GRID);
+        BK_geom_set(chk, "row", i % 4);
+        BK_geom_set(chk, "column", i / 4);
+        BK_geom_set(chk, "sticky", BK_ANCHOR_W | BK_ANCHOR_E);
+        BK_geom_set(chk, "padx0", 4);
+        BK_geom_set(chk, "padx1", 12);
+        BK_geom_set(chk, "pady0", 2);
+        BK_geom_set(chk, "pady1", 2);
+        endless_chk_levels_[i] = chk;
+    }
+    BK_node_add(modal_dialog_, grid, -1);
+    BK_geom_set_manager(grid, BK_GEOM_PACK);
+    BK_geom_set(grid, "side", 0);
+    BK_geom_set(grid, "fill", 1);
+    BK_geom_set(grid, "padx0", 18);
+    BK_geom_set(grid, "pady1", 4);
+
+    add_sep(modal_dialog_);
+
+    endless_chk_no_time_ = BK_node_new("checkbox");
+    BK_set_str(endless_chk_no_time_, "label", i18n_.tr("dialog.endless.no_time_limit").c_str());
+    BK_node_add(modal_dialog_, endless_chk_no_time_, -1);
+    BK_geom_set_manager(endless_chk_no_time_, BK_GEOM_PACK);
+    BK_geom_set(endless_chk_no_time_, "side", 0);
+    BK_geom_set(endless_chk_no_time_, "fill", 1);
+    BK_geom_set(endless_chk_no_time_, "pady0", 2);
+    BK_geom_set(endless_chk_no_time_, "pady1", 2);
+
+    endless_chk_unlim_shuffle_ = BK_node_new("checkbox");
+    BK_set_str(endless_chk_unlim_shuffle_, "label", i18n_.tr("dialog.endless.unlimited_shuffle").c_str());
+    BK_node_add(modal_dialog_, endless_chk_unlim_shuffle_, -1);
+    BK_geom_set_manager(endless_chk_unlim_shuffle_, BK_GEOM_PACK);
+    BK_geom_set(endless_chk_unlim_shuffle_, "side", 0);
+    BK_geom_set(endless_chk_unlim_shuffle_, "fill", 1);
+    BK_geom_set(endless_chk_unlim_shuffle_, "pady0", 2);
+    BK_geom_set(endless_chk_unlim_shuffle_, "pady1", 2);
+
+    add_sep(modal_dialog_);
+
+    BKNode* btn_row = BK_node_new("frame");
+    BK_set_num(btn_row, "padding", 0);
+    modal_ok_btn_ = BK_node_new("button");
+    BK_set_str(modal_ok_btn_, "text", i18n_.tr("dialog.endless.btn.start").c_str());
+    BK_node_add(btn_row, modal_ok_btn_, -1);
+    BK_geom_set_manager(modal_ok_btn_, BK_GEOM_PACK);
+    BK_geom_set(modal_ok_btn_, "side", 2); // left
+    BK_geom_set(modal_ok_btn_, "reqwidth", 110);
+    BK_geom_set(modal_ok_btn_, "padx1", 8);
+
+    modal_cancel_btn_ = BK_node_new("button");
+    BK_set_str(modal_cancel_btn_, "text", i18n_.tr("dialog.endless.btn.cancel").c_str());
+    BK_node_add(btn_row, modal_cancel_btn_, -1);
+    BK_geom_set_manager(modal_cancel_btn_, BK_GEOM_PACK);
+    BK_geom_set(modal_cancel_btn_, "side", 2); // left
+    BK_geom_set(modal_cancel_btn_, "reqwidth", 110);
+
+    BK_node_add(modal_dialog_, btn_row, -1);
+    BK_geom_set_manager(btn_row, BK_GEOM_PACK);
+    BK_geom_set(btn_row, "side", 0);
+    BK_geom_set(btn_row, "pady0", 4);
+
+    BK_node_add(modal_backdrop_, modal_dialog_, -1);
+    BK_geom_set_manager(modal_dialog_, BK_GEOM_PLACE);
+    BK_geom_set(modal_dialog_, "relx", 0.5);
+    BK_geom_set(modal_dialog_, "rely", 0.5);
+    BK_geom_set(modal_dialog_, "anchor", BK_ANCHOR_N | BK_ANCHOR_S | BK_ANCHOR_W | BK_ANCHOR_E);
+
+    active_modal_ = ModalKind::EndlessSetup;
+    sync_endless_modal_controls();
+    BK_set_num(modal_backdrop_, "visible", 1);
+    BK_node_relayout(modal_backdrop_);
+    BK_node_invalidate(modal_backdrop_);
+}
+
+void BuiApp::accept_endless_modal() {
+    if (active_modal_ != ModalKind::EndlessSetup) return;
+    if (endless_draft_.type == core::EndlessModeType::SpecificLevels && endless_draft_.level_mask == 0) {
+        return;
+    }
+    trigger_endless_game(endless_draft_);
 }
 
 void BuiApp::open_records_modal(int editable_rank) {
@@ -1460,6 +1686,11 @@ void BuiApp::on_host_emit(void* data, BKNode* node, int kind, void* ref, double 
                     self->trigger_new_game();
                 }
                 break;
+            case MenuAction::EndlessGame:
+                if (self->game_state_.in_title_screen() && self->active_modal_ == ModalKind::None) {
+                    self->queue_deferred(DeferredAction::OpenEndless);
+                }
+                break;
             case MenuAction::GiveUp:
                 self->trigger_give_up();
                 break;
@@ -1527,6 +1758,9 @@ void BuiApp::on_host_emit(void* data, BKNode* node, int kind, void* ref, double 
             case MenuAction::FilterBilinear:
                 self->set_scale_filter(core::ScaleFilter::Bilinear);
                 break;
+            case MenuAction::ToggleFullscreen:
+                self->set_borderless_fullscreen(!self->config_.borderless_fullscreen);
+                break;
             case MenuAction::ThemeDark:
                 self->set_blender_theme("dark");
                 break;
@@ -1561,12 +1795,56 @@ void BuiApp::on_host_emit(void* data, BKNode* node, int kind, void* ref, double 
     if (kind == BK_EV_CLICK && node == self->modal_ok_btn_) {
         if (self->active_modal_ == ModalKind::GameEvent) {
             self->queue_deferred(DeferredAction::AcceptGameModal);
+        } else if (self->active_modal_ == ModalKind::EndlessSetup) {
+            self->queue_deferred(DeferredAction::AcceptEndlessModal);
         } else if (self->active_modal_ == ModalKind::Records) {
             self->queue_deferred(DeferredAction::AcceptRecordsModal);
         } else {
             self->queue_deferred(DeferredAction::CloseModal);
         }
         return;
+    }
+
+    if (kind == BK_EV_CLICK && node == self->modal_cancel_btn_) {
+        self->queue_deferred(DeferredAction::CloseModal);
+        return;
+    }
+
+    if (kind == BK_EV_CHANGE && self->active_modal_ == ModalKind::EndlessSetup) {
+        if (node == self->endless_rb_all_) {
+            self->endless_draft_.type = core::EndlessModeType::AllLevels;
+            self->sync_endless_modal_controls();
+            return;
+        }
+        if (node == self->endless_rb_specific_) {
+            self->endless_draft_.type = core::EndlessModeType::SpecificLevels;
+            self->sync_endless_modal_controls();
+            return;
+        }
+        if (node == self->endless_chk_shuffle_) {
+            self->endless_draft_.shuffle = (BK_get_num(node, "value") != 0.0);
+            self->sync_endless_modal_controls();
+            return;
+        }
+        if (node == self->endless_chk_no_time_) {
+            self->endless_draft_.no_time_limit = (BK_get_num(node, "value") != 0.0);
+            self->sync_endless_modal_controls();
+            return;
+        }
+        if (node == self->endless_chk_unlim_shuffle_) {
+            self->endless_draft_.unlimited_shuffle = (BK_get_num(node, "value") != 0.0);
+            self->sync_endless_modal_controls();
+            return;
+        }
+        for (int i = 0; i < 7; ++i) {
+            if (node == self->endless_chk_levels_[i]) {
+                bool checked = (BK_get_num(node, "value") != 0.0);
+                if (checked) self->endless_draft_.level_mask |= static_cast<uint8_t>(1u << i);
+                else self->endless_draft_.level_mask &= static_cast<uint8_t>(~(1u << i));
+                self->sync_endless_modal_controls();
+                return;
+            }
+        }
     }
 
     if (kind == BK_EV_CHANGE && node == self->modal_name_edit_) {

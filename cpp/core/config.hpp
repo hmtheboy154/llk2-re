@@ -32,6 +32,7 @@ struct Config {
     std::array<bool, 3> midi_tracks_enabled = {true, true, true}; // 101.mid, 102.mid, 103.mid
     WindowScaleMode scale_mode = WindowScaleMode::Scale1x;
     ScaleFilter scale_filter = ScaleFilter::Nearest;
+    bool borderless_fullscreen = false;
     std::string language = "zh-TW";
     std::string soundfont_path;
     std::string player_name = "Player";

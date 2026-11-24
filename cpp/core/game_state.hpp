@@ -7,10 +7,23 @@
 
 namespace llk2::core {
 
+enum class EndlessModeType {
+    AllLevels = 0,     // Loop all 7 shift stages (0..6) endlessly
+    SpecificLevels = 1 // Loop only the checked shift stage(s) in level_mask
+};
+
+struct EndlessConfig {
+    EndlessModeType type = EndlessModeType::AllLevels;
+    uint8_t level_mask = 0x01;       // Bit 0..6 -> Stages 1..7 (used when type == SpecificLevels)
+    bool shuffle = false;            // Shuffle stage order (bag shuffle so stages don't repeat consecutively)
+    bool no_time_limit = false;      // Optional relaxed timer (stays full, never times out)
+    bool unlimited_shuffle = false;  // Optional unlimited auto-shuffles / lives (never game-overs on deadlock)
+};
+
 enum class GameEventType {
     PlaySfx,              // sfx_id = 201..206
-    StageClearModal,      // Stage 0..5 cleared -> advance to next_level_display (2..7)
-    AllStagesClearModal,  // Stage 6 cleared -> victory!
+    StageClearModal,      // Stage 0..5 cleared (or Endless stage cleared)
+    AllStagesClearModal,  // Classic Stage 6 cleared -> victory!
     NoMovesGameOverModal, // Lives < 0 on deadlock
     TimeoutGameOverModal  // LastTick >= TimeLeft * 1000
 };
@@ -18,10 +31,13 @@ enum class GameEventType {
 struct GameEvent {
     GameEventType type;
     int sfx_id = 0;
-    int next_level_display = 0; // Level + 2 (2..7)
+    int next_level_display = 0; // Classic: Level + 2 (2..7); Endless: next stage count (2, 3, ...)
     int bonus = 0;
     int life_bonus = 0;
     float total_score = 0.0f;
+    bool is_endless = false;
+    bool records_score = true;  // False in Endless Mode (never writes to high scores)
+    int next_shift_level = 0;   // 0..6 shift rule of the upcoming stage
 };
 
 class GameState {
@@ -39,8 +55,11 @@ public:
     // VB5 Form_Load: Randomize Timer
     void randomize_from_clock() noexcept;
 
-    // VB5 Mem_NewGame_Click + GameLoop initialization
+    // VB5 Mem_NewGame_Click + GameLoop initialization (Classic 7-stage mode, records high scores)
     void start_new_game(uint64_t now_ms);
+
+    // Endless Mode (never saves scores to HighScoreTable, loops indefinitely)
+    void start_endless_game(const EndlessConfig& cfg, uint64_t now_ms);
 
     // VB5 Mem_QuitGame_Click
     void give_up_game();
@@ -67,8 +86,13 @@ public:
     bool board_active() const noexcept { return board_active_; }
     bool awaiting_modal() const noexcept { return awaiting_modal_; }
     bool animating_link() const noexcept { return animating_link_; }
+    bool is_endless() const noexcept { return endless_active_; }
+    bool no_time_limit() const noexcept { return no_time_limit_; }
+    bool unlimited_shuffle() const noexcept { return unlimited_shuffle_; }
+    int endless_stage_count() const noexcept { return endless_stage_count_; }
+    const EndlessConfig& endless_config() const noexcept { return endless_cfg_; }
 
-    int level() const noexcept { return level_; }          // 0..6
+    int level() const noexcept { return level_; }          // 0..6 (current stage shift rule)
     int lives() const noexcept { return lives_; }          // starts at 10
     float score() const noexcept { return score_; }
     float time_left() const noexcept { return time_left_; } // 600.0f
@@ -90,6 +114,9 @@ public:
 
 private:
     void init_current_stage_board();
+    void refill_endless_queue();
+    int pop_next_endless_level();
+    int peek_next_endless_level();
     void process_selection(uint64_t now_ms);
     // Returns true if completing the pair triggered a deadlock shuffle.
     bool complete_matched_pair(uint64_t now_ms);
@@ -117,6 +144,16 @@ private:
     float time_left_ = kStageTimeLimitSec;
     float last_tick_ms_ = 0.0f;
     uint64_t last_wall_ms_ = 0;
+
+    // Endless Mode state
+    bool endless_active_ = false;
+    bool no_time_limit_ = false;
+    bool unlimited_shuffle_ = false;
+    int endless_stage_count_ = 0; // 1-based stages played in current endless run
+    EndlessConfig endless_cfg_{};
+    std::vector<int> endless_pool_;
+    std::vector<int> endless_queue_;
+    int last_endless_level_ = -1;
 
     int sel1_c_ = -1;
     int sel1_r_ = -1;

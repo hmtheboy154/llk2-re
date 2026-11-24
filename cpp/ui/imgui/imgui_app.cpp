@@ -374,6 +374,28 @@ void ImGuiApp::update_texture_filter() {
 void ImGuiApp::apply_window_scale() {
     if (!window_) return;
     int mh = static_cast<int>(std::lround(menu_bar_h_));
+    if (config_.borderless_fullscreen) {
+        if (!headless_mode_) {
+            SDL_SetWindowResizable(window_, true);
+            SDL_SetWindowMinimumSize(window_, 320, 240);
+#if defined(LLK2_USE_SDL3)
+            SDL_SetWindowFullscreen(window_, true);
+#else
+            SDL_SetWindowFullscreen(window_, SDL_WINDOW_FULLSCREEN_DESKTOP);
+#endif
+        }
+        update_texture_filter();
+        return;
+    }
+
+    if (!headless_mode_) {
+#if defined(LLK2_USE_SDL3)
+        SDL_SetWindowFullscreen(window_, false);
+#else
+        SDL_SetWindowFullscreen(window_, 0);
+#endif
+    }
+
     if (config_.scale_mode == core::WindowScaleMode::FreeAspect) {
         SDL_SetWindowResizable(window_, true);
         SDL_SetWindowMinimumSize(window_,
@@ -409,6 +431,14 @@ void ImGuiApp::trigger_new_game() {
     board_dirty_ = true;
 }
 
+void ImGuiApp::trigger_endless_game(const core::EndlessConfig& cfg) {
+    endless_draft_ = cfg;
+    uint64_t now = common::now_steady_ms();
+    game_state_.start_endless_game(cfg, now);
+    renderer_.render(game_state_);
+    board_dirty_ = true;
+}
+
 void ImGuiApp::trigger_give_up() {
     game_state_.give_up_game();
     renderer_.render(game_state_);
@@ -424,6 +454,7 @@ void ImGuiApp::set_language(const std::string& lang_code) {
 
 void ImGuiApp::set_scale_mode(core::WindowScaleMode mode) {
     config_.scale_mode = mode;
+    config_.borderless_fullscreen = false;
     apply_window_scale();
     save_config_and_scores();
 }
@@ -431,6 +462,12 @@ void ImGuiApp::set_scale_mode(core::WindowScaleMode mode) {
 void ImGuiApp::set_scale_filter(core::ScaleFilter filter) {
     config_.scale_filter = filter;
     update_texture_filter();
+    save_config_and_scores();
+}
+
+void ImGuiApp::set_borderless_fullscreen(bool enabled) {
+    config_.borderless_fullscreen = enabled;
+    apply_window_scale();
     save_config_and_scores();
 }
 
@@ -444,6 +481,14 @@ void ImGuiApp::set_midi_track_enabled(int track_id, bool enabled) {
     config_.set_track_enabled(track_id, enabled);
     audio_.update(config_);
     save_config_and_scores();
+}
+
+void ImGuiApp::open_endless_modal() {
+    show_records_modal_ = false;
+    show_explain_modal_ = false;
+    show_author_modal_ = false;
+    show_endless_modal_ = true;
+    endless_open_pending_ = true;
 }
 
 void ImGuiApp::open_records_modal(int editable_rank) {
@@ -574,7 +619,8 @@ void ImGuiApp::handle_sdl_event(const SDL_Event& ev, bool& want_quit) {
 
     const ImGuiIO& io = ImGui::GetIO();
     const bool modal_blocking = !pending_modals_.empty() || show_records_modal_ ||
-                                show_explain_modal_ || show_author_modal_ || show_path_modal_;
+                                show_explain_modal_ || show_author_modal_ ||
+                                show_endless_modal_ || show_path_modal_;
 
 #if defined(LLK2_USE_SDL3)
     switch (ev.type) {
@@ -586,6 +632,9 @@ void ImGuiApp::handle_sdl_event(const SDL_Event& ev, bool& want_quit) {
             if (!ev.key.repeat) {
                 if (ev.key.key == SDLK_F12) {
                     show_inspector_ = !show_inspector_;
+                } else if (ev.key.key == SDLK_F11 ||
+                           (ev.key.key == SDLK_RETURN && (ev.key.mod & SDL_KMOD_ALT))) {
+                    set_borderless_fullscreen(!config_.borderless_fullscreen);
                 } else if (ev.key.key == SDLK_F2 && game_state_.in_title_screen() && !modal_blocking) {
                     trigger_new_game();
                 }
@@ -648,6 +697,9 @@ void ImGuiApp::handle_sdl_event(const SDL_Event& ev, bool& want_quit) {
             if (!ev.key.repeat) {
                 if (ev.key.keysym.sym == SDLK_F12) {
                     show_inspector_ = !show_inspector_;
+                } else if (ev.key.keysym.sym == SDLK_F11 ||
+                           (ev.key.keysym.sym == SDLK_RETURN && (ev.key.keysym.mod & KMOD_ALT))) {
+                    set_borderless_fullscreen(!config_.borderless_fullscreen);
                 } else if (ev.key.keysym.sym == SDLK_F2 && game_state_.in_title_screen() && !modal_blocking) {
                     trigger_new_game();
                 }
@@ -815,6 +867,9 @@ void ImGuiApp::draw_menu_bar() {
         if (ImGui::MenuItem((tr_clean(i18n_, "menu.game.new") + "###act_new").c_str(), "F2", false, on_title)) {
             trigger_new_game();
         }
+        if (ImGui::MenuItem((tr_clean(i18n_, "menu.game.endless") + "###act_endless").c_str(), nullptr, false, on_title)) {
+            open_endless_modal();
+        }
         if (ImGui::MenuItem((tr_clean(i18n_, "menu.game.giveup") + "###act_giveup").c_str(), nullptr, false, !on_title)) {
             trigger_give_up();
         }
@@ -935,6 +990,11 @@ void ImGuiApp::draw_menu_bar() {
             ImGui::EndMenu();
         }
 
+        bool fs = config_.borderless_fullscreen;
+        if (ImGui::MenuItem((tr_clean(i18n_, "menu.settings.fullscreen") + "###act_fullscreen").c_str(), "F11", &fs)) {
+            set_borderless_fullscreen(fs);
+        }
+
         ImGui::Separator();
 
         if (ImGui::MenuItem((i18n_.tr("menu.settings.import_hst") + "###act_import").c_str())) {
@@ -975,10 +1035,7 @@ void ImGuiApp::draw_game_event_modal() {
     switch (ev.type) {
         case core::GameEventType::StageClearModal:
             title = i18n_.tr("msg.stage_clear.title");
-            body = i18n_.format("msg.stage_clear.body", {
-                {"level", std::to_string(ev.next_level_display)},
-                {"bonus", std::to_string(ev.bonus)}
-            });
+            body = common::format_stage_clear_body(ev, game_state_.no_time_limit(), i18n_);
             break;
 
         case core::GameEventType::AllStagesClearModal: {
@@ -989,24 +1046,20 @@ void ImGuiApp::draw_game_event_modal() {
                 {"bonus", std::to_string(total_bonus)},
                 {"score", std::to_string(total_sc)}
             });
-            check_hs = true;
+            check_hs = ev.records_score;
             break;
         }
 
         case core::GameEventType::NoMovesGameOverModal:
             title = i18n_.tr("msg.no_moves.title");
             body = i18n_.tr("msg.no_moves.body");
-            check_hs = true;
+            check_hs = ev.records_score;
             break;
 
         case core::GameEventType::TimeoutGameOverModal: {
-            int total_sc = static_cast<int>(std::lround(ev.total_score));
             title = i18n_.tr("msg.timeout.title");
-            body = i18n_.format("msg.timeout.body", {
-                {"bonus", std::to_string(ev.bonus)},
-                {"score", std::to_string(total_sc)}
-            });
-            check_hs = true;
+            body = common::format_timeout_body(ev, game_state_.unlimited_shuffle(), i18n_);
+            check_hs = ev.records_score;
             break;
         }
 
@@ -1482,9 +1535,124 @@ void ImGuiApp::draw_hint_overlay() {
     draw_tile_box(c2, r2);
 }
 
+void ImGuiApp::draw_endless_modal() {
+    if (!show_endless_modal_) return;
+
+    std::string label = i18n_.tr("dialog.endless.title") + "###llk2_endless";
+    if (endless_open_pending_) {
+        ImGui::OpenPopup(label.c_str());
+        endless_open_pending_ = false;
+    }
+
+    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(430.0f, 0.0f), ImGuiCond_Always);
+
+    if (ImGui::BeginPopupModal(label.c_str(), &show_endless_modal_,
+                               ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove)) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.75f, 0.78f, 0.84f, 1.0f));
+        ImGui::TextWrapped("%s", i18n_.tr("dialog.endless.note").c_str());
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        int mode_val = (endless_draft_.type == core::EndlessModeType::SpecificLevels) ? 1 : 0;
+        if (ImGui::RadioButton((i18n_.tr("dialog.endless.all_levels") + "###rb_all").c_str(), &mode_val, 0)) {
+            endless_draft_.type = core::EndlessModeType::AllLevels;
+        }
+
+        int selected_cnt = 0;
+        for (int i = 0; i < 7; ++i) {
+            if ((endless_draft_.level_mask & (1u << i)) != 0) ++selected_cnt;
+        }
+        bool is_specific = (endless_draft_.type == core::EndlessModeType::SpecificLevels);
+
+        ImGui::Indent(22.0f);
+        ImGui::BeginDisabled(is_specific && selected_cnt <= 1);
+        ImGui::Checkbox((i18n_.tr("dialog.endless.shuffle") + "###chk_endless_shuffle").c_str(),
+                        &endless_draft_.shuffle);
+        ImGui::EndDisabled();
+        ImGui::Unindent(22.0f);
+
+        ImGui::Spacing();
+        if (ImGui::RadioButton((i18n_.tr("dialog.endless.specific_levels") + "###rb_spec").c_str(), &mode_val, 1)) {
+            endless_draft_.type = core::EndlessModeType::SpecificLevels;
+            is_specific = true;
+        }
+
+        ImGui::Indent(22.0f);
+        ImGui::BeginDisabled(!is_specific);
+        if (ImGui::BeginTable("##endless_lvls", 2, ImGuiTableFlags_SizingStretchSame)) {
+            for (int row = 0; row < 4; ++row) {
+                ImGui::TableNextRow();
+                for (int col = 0; col < 2; ++col) {
+                    int idx = col * 4 + row;
+                    ImGui::TableSetColumnIndex(col);
+                    if (idx < 7) {
+                        bool checked = (endless_draft_.level_mask & (1u << idx)) != 0;
+                        std::string chk_lbl = common::format_endless_stage_label(idx, i18n_) +
+                                              "###elvl_" + std::to_string(idx);
+                        if (ImGui::Checkbox(chk_lbl.c_str(), &checked)) {
+                            if (checked) endless_draft_.level_mask |= static_cast<uint8_t>(1u << idx);
+                            else endless_draft_.level_mask &= static_cast<uint8_t>(~(1u << idx));
+                        }
+                    }
+                }
+            }
+            ImGui::EndTable();
+        }
+        ImGui::EndDisabled();
+        ImGui::Unindent(22.0f);
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        ImGui::Checkbox((i18n_.tr("dialog.endless.no_time_limit") + "###chk_endless_notime").c_str(),
+                        &endless_draft_.no_time_limit);
+        ImGui::Checkbox((i18n_.tr("dialog.endless.unlimited_shuffle") + "###chk_endless_unlim_shuffle").c_str(),
+                        &endless_draft_.unlimited_shuffle);
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        selected_cnt = 0;
+        for (int i = 0; i < 7; ++i) {
+            if ((endless_draft_.level_mask & (1u << i)) != 0) ++selected_cnt;
+        }
+        bool can_start = (!is_specific || selected_cnt > 0);
+
+        float btn_w = 100.0f;
+        float total_btn_w = btn_w * 2.0f + ImGui::GetStyle().ItemSpacing.x;
+        float avail = ImGui::GetContentRegionAvail().x;
+        if (avail > total_btn_w) {
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail - total_btn_w) * 0.5f);
+        }
+
+        ImGui::BeginDisabled(!can_start);
+        if (ImGui::Button((i18n_.tr("dialog.endless.btn.start") + "###endless_start").c_str(), ImVec2(btn_w, 0))) {
+            show_endless_modal_ = false;
+            ImGui::CloseCurrentPopup();
+            trigger_endless_game(endless_draft_);
+        }
+        ImGui::EndDisabled();
+
+        ImGui::SameLine();
+        if (ImGui::Button((i18n_.tr("dialog.endless.btn.cancel") + "###endless_cancel").c_str(), ImVec2(btn_w, 0)) ||
+            ImGui::IsKeyPressed(ImGuiKey_Escape) || !show_endless_modal_) {
+            show_endless_modal_ = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+}
+
 void ImGuiApp::draw_modals() {
     ensure_explain_texture_for_lang();
     draw_game_event_modal();
+    draw_endless_modal();
     draw_records_modal();
     draw_image_modal("llk2_explain", i18n_.tr("dialog.explain.title"),
                      explain_tex_, explain_tex_w_, explain_tex_h_,

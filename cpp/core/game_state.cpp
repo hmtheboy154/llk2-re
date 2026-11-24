@@ -61,7 +61,51 @@ void GameState::init_current_stage_board() {
     clear_selection();
 }
 
+void GameState::refill_endless_queue() {
+    endless_queue_ = endless_pool_;
+    if (endless_queue_.empty()) {
+        endless_queue_.push_back(0);
+    }
+    if (endless_cfg_.shuffle && endless_queue_.size() > 1) {
+        // Fisher-Yates bag shuffle using rng_
+        for (size_t i = endless_queue_.size() - 1; i > 0; --i) {
+            size_t j = static_cast<size_t>(rng_.next_float() * static_cast<float>(i + 1));
+            if (j > i) j = i;
+            std::swap(endless_queue_[i], endless_queue_[j]);
+        }
+        // Avoid repeating the immediately previous stage across bag boundaries
+        if (last_endless_level_ >= 0 && endless_queue_.front() == last_endless_level_) {
+            std::swap(endless_queue_.front(), endless_queue_.back());
+        }
+    }
+}
+
+int GameState::peek_next_endless_level() {
+    if (endless_queue_.empty()) {
+        refill_endless_queue();
+    }
+    return endless_queue_.front();
+}
+
+int GameState::pop_next_endless_level() {
+    if (endless_queue_.empty()) {
+        refill_endless_queue();
+    }
+    int next = endless_queue_.front();
+    endless_queue_.erase(endless_queue_.begin());
+    last_endless_level_ = next;
+    return next;
+}
+
 void GameState::start_new_game(uint64_t now_ms) {
+    endless_active_ = false;
+    no_time_limit_ = false;
+    unlimited_shuffle_ = false;
+    endless_stage_count_ = 0;
+    endless_pool_.clear();
+    endless_queue_.clear();
+    last_endless_level_ = -1;
+
     level_ = 0;
     score_ = 0.0f;
     lives_ = 10;
@@ -72,7 +116,51 @@ void GameState::start_new_game(uint64_t now_ms) {
     last_wall_ms_ = now_ms;
 }
 
+void GameState::start_endless_game(const EndlessConfig& cfg, uint64_t now_ms) {
+    endless_active_ = true;
+    endless_cfg_ = cfg;
+    no_time_limit_ = cfg.no_time_limit;
+    unlimited_shuffle_ = cfg.unlimited_shuffle;
+    endless_stage_count_ = 1;
+    endless_pool_.clear();
+    endless_queue_.clear();
+    last_endless_level_ = -1;
+
+    if (cfg.type == EndlessModeType::AllLevels) {
+        for (int lvl = 0; lvl <= 6; ++lvl) {
+            endless_pool_.push_back(lvl);
+        }
+    } else {
+        for (int lvl = 0; lvl <= 6; ++lvl) {
+            if ((cfg.level_mask & (1u << lvl)) != 0) {
+                endless_pool_.push_back(lvl);
+            }
+        }
+        if (endless_pool_.empty()) {
+            endless_pool_.push_back(0);
+            endless_cfg_.level_mask = 0x01;
+        }
+    }
+
+    level_ = pop_next_endless_level();
+    score_ = 0.0f;
+    lives_ = 10;
+    time_left_ = kStageTimeLimitSec;
+    quit_after_modal_ = false;
+    events_.clear();
+    init_current_stage_board();
+    last_wall_ms_ = now_ms;
+}
+
 void GameState::give_up_game() {
+    endless_active_ = false;
+    no_time_limit_ = false;
+    unlimited_shuffle_ = false;
+    endless_stage_count_ = 0;
+    endless_pool_.clear();
+    endless_queue_.clear();
+    last_endless_level_ = -1;
+
     board_active_ = false;
     in_title_screen_ = true;
     awaiting_modal_ = false;
@@ -83,6 +171,9 @@ void GameState::give_up_game() {
 }
 
 int GameState::remaining_seconds() const noexcept {
+    if (no_time_limit_) {
+        return static_cast<int>(time_left_);
+    }
     int elapsed_sec = static_cast<int>(last_tick_ms_) / 1000;
     return static_cast<int>(time_left_) - elapsed_sec;
 }
@@ -217,9 +308,23 @@ bool GameState::complete_matched_pair(uint64_t now_ms) {
         // Note: Do NOT increment level_ until acknowledge_modal() so the completed
         // stage's background image (Pic_Level(level_)) stays visible behind the dialog!
         events_.push_back(GameEvent{GameEventType::PlaySfx, 205});
-        lives_ += 1;
-        int rem_bonus = remaining_seconds();
-        if (level_ >= 6) {
+        if (!unlimited_shuffle_) {
+            lives_ += 1;
+        }
+        int rem_bonus = no_time_limit_ ? 0 : remaining_seconds();
+        if (endless_active_) {
+            score_ += static_cast<float>(rem_bonus);
+            board_active_ = false;
+            awaiting_modal_ = true;
+            quit_after_modal_ = false;
+            hover_c_ = -1;
+            hover_r_ = -1;
+            int upcoming_shift = peek_next_endless_level();
+            events_.push_back(GameEvent{
+                GameEventType::StageClearModal, 0, endless_stage_count_ + 1,
+                rem_bonus, 0, score_, true, false, upcoming_shift
+            });
+        } else if (level_ >= 6) {
             int life_bonus = lives_ * 50;
             score_ += static_cast<float>(rem_bonus + life_bonus);
             board_active_ = false;
@@ -228,7 +333,8 @@ bool GameState::complete_matched_pair(uint64_t now_ms) {
             hover_c_ = -1;
             hover_r_ = -1;
             events_.push_back(GameEvent{
-                GameEventType::AllStagesClearModal, 0, level_ + 2, rem_bonus, life_bonus, score_
+                GameEventType::AllStagesClearModal, 0, level_ + 2,
+                rem_bonus, life_bonus, score_, false, true, 6
             });
         } else {
             score_ += static_cast<float>(rem_bonus);
@@ -238,14 +344,17 @@ bool GameState::complete_matched_pair(uint64_t now_ms) {
             hover_c_ = -1;
             hover_r_ = -1;
             events_.push_back(GameEvent{
-                GameEventType::StageClearModal, 0, level_ + 2, rem_bonus, 0, score_
+                GameEventType::StageClearModal, 0, level_ + 2,
+                rem_bonus, 0, score_, false, true, level_ + 1
             });
         }
     } else if (!board_.has_valid_move()) {
         // GameState = 2: DeadlockHandler (slot 22)
         events_.push_back(GameEvent{GameEventType::PlaySfx, 206});
-        lives_ -= 1;
-        if (lives_ >= 0) {
+        if (!unlimited_shuffle_) {
+            lives_ -= 1;
+        }
+        if (unlimited_shuffle_ || lives_ >= 0) {
             do {
                 board_.shuffle_remaining(rng_);
             } while (!board_.has_valid_move());
@@ -257,7 +366,8 @@ bool GameState::complete_matched_pair(uint64_t now_ms) {
             hover_c_ = -1;
             hover_r_ = -1;
             events_.push_back(GameEvent{
-                GameEventType::NoMovesGameOverModal, 0, 0, 0, 0, score_
+                GameEventType::NoMovesGameOverModal, 0, 0, 0, 0, score_,
+                endless_active_, !endless_active_, level_
             });
         }
     }
@@ -272,7 +382,9 @@ void GameState::tick(uint64_t now_ms) {
     }
 
     if (now_ms > last_wall_ms_) {
-        last_tick_ms_ += static_cast<float>(now_ms - last_wall_ms_);
+        if (!no_time_limit_) {
+            last_tick_ms_ += static_cast<float>(now_ms - last_wall_ms_);
+        }
         last_wall_ms_ = now_ms;
     }
 
@@ -293,16 +405,17 @@ void GameState::tick(uint64_t now_ms) {
     }
 
     // Check timeout: If LastTick >= TimeLeft * 1000 Then GameState = 3 (TimeoutOver, slot 23)
-    if (last_tick_ms_ >= time_left_ * 1000.0f) {
+    if (!no_time_limit_ && last_tick_ms_ >= time_left_ * 1000.0f) {
         events_.push_back(GameEvent{GameEventType::PlaySfx, 204});
-        int bonus = lives_ * 50;
+        int bonus = unlimited_shuffle_ ? 0 : (lives_ * 50);
         score_ += static_cast<float>(bonus);
         awaiting_modal_ = true;
         quit_after_modal_ = true;
         hover_c_ = -1;
         hover_r_ = -1;
         events_.push_back(GameEvent{
-            GameEventType::TimeoutGameOverModal, 0, 0, bonus, bonus, score_
+            GameEventType::TimeoutGameOverModal, 0, 0, bonus, bonus, score_,
+            endless_active_, !endless_active_, level_
         });
     }
 }
@@ -313,14 +426,26 @@ void GameState::acknowledge_modal(uint64_t now_ms) {
     }
     awaiting_modal_ = false;
     if (quit_after_modal_) {
+        endless_active_ = false;
+        no_time_limit_ = false;
+        unlimited_shuffle_ = false;
+        endless_stage_count_ = 0;
+        endless_pool_.clear();
+        endless_queue_.clear();
+        last_endless_level_ = -1;
         board_active_ = false;
         in_title_screen_ = true;
         hover_c_ = -1;
         hover_r_ = -1;
         clear_selection();
     } else {
-        // Advance to the next stage (Level 1..6) only AFTER the StageClear modal is dismissed!
-        level_ += 1;
+        // Advance to the next stage only AFTER the StageClear modal is dismissed!
+        if (endless_active_) {
+            endless_stage_count_ += 1;
+            level_ = pop_next_endless_level();
+        } else {
+            level_ += 1;
+        }
         init_current_stage_board();
         last_wall_ms_ = now_ms;
     }

@@ -71,6 +71,7 @@ bool Config::save(const std::filesystem::path& path) const {
       << "  \"midi_track_103\": " << (midi_tracks_enabled[2] ? "true" : "false") << ",\n"
       << "  \"scale_mode\": " << static_cast<int>(scale_mode) << ",\n"
       << "  \"scale_filter\": \"" << (scale_filter == ScaleFilter::Bilinear ? "bilinear" : "nearest") << "\",\n"
+      << "  \"borderless_fullscreen\": " << (borderless_fullscreen ? "true" : "false") << ",\n"
       << "  \"language\": \"" << escape_json_str(language) << "\",\n"
       << "  \"soundfont_path\": \"" << escape_json_str(soundfont_path) << "\",\n"
       << "  \"player_name\": \"" << escape_json_str(player_name) << "\"\n"
@@ -151,6 +152,7 @@ bool Config::load(const std::filesystem::path& path) {
     }
     std::string filt = extract_str(s, "scale_filter", "nearest");
     scale_filter = (filt == "bilinear") ? ScaleFilter::Bilinear : ScaleFilter::Nearest;
+    borderless_fullscreen = extract_bool(s, "borderless_fullscreen", false);
     language = extract_str(s, "language", language);
     soundfont_path = extract_str(s, "soundfont_path", soundfont_path);
     player_name = extract_str(s, "player_name", player_name);

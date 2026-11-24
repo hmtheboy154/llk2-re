@@ -40,4 +40,20 @@ public:
                 QWidget* parent = nullptr);
 };
 
+// Endless Mode configuration dialog:
+// Option 1: All Levels (Stages 1-7) with optional stage shuffle
+// Option 2: Specific Level(s) Loop (1..7 checkboxes)
+// Plus optional No Time Limit (Relaxed) checkbox.
+class EndlessDialog : public QDialog {
+public:
+    EndlessDialog(const core::I18n& i18n,
+                  const core::EndlessConfig& initial,
+                  QWidget* parent = nullptr);
+
+    core::EndlessConfig selected_config() const noexcept { return result_; }
+
+private:
+    core::EndlessConfig result_;
+};
+
 } // namespace llk2::ui::qt

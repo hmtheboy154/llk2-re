@@ -44,13 +44,16 @@ public:
 
     // Programmatic actions (shared by menus and smoke test)
     void trigger_new_game();
+    void trigger_endless_game(const core::EndlessConfig& cfg);
     void trigger_give_up();
     void set_language(const std::string& lang_code);
     void set_scale_mode(core::WindowScaleMode mode);
     void set_scale_filter(core::ScaleFilter filter);
+    void set_borderless_fullscreen(bool enabled);
     void set_midi_backend(core::MidiBackend backend);
     void set_midi_track_enabled(int track_id, bool enabled);
 
+    void open_endless_modal();
     void open_records_modal(int editable_rank = -1);
     void open_explain_modal();
     void open_author_modal();
@@ -93,6 +96,7 @@ private:
 
     void draw_menu_bar();
     void draw_modals();
+    void draw_endless_modal();
     void draw_records_modal();
     void draw_image_modal(const char* popup_id, const std::string& title,
                           SDL_Texture* tex, int tex_w, int tex_h, bool& open_flag,
@@ -150,6 +154,10 @@ private:
 
     bool show_author_modal_ = false;
     bool author_open_pending_ = false;
+
+    bool show_endless_modal_ = false;
+    bool endless_open_pending_ = false;
+    core::EndlessConfig endless_draft_{};
 
     // Optional SDL2/fallback path modal
     bool show_path_modal_ = false;

@@ -81,10 +81,12 @@ public:
 
     // Public helpers for automated smoke tests & direct programmatic control
     void trigger_new_game();
+    void trigger_endless_game(const core::EndlessConfig& cfg);
     void trigger_give_up();
     void set_language(const std::string& lang_code);
     void set_scale_mode(core::WindowScaleMode mode);
     void set_scale_filter(core::ScaleFilter filter);
+    void set_borderless_fullscreen(bool enabled);
     void set_midi_backend(core::MidiBackend backend);
     void set_midi_track_enabled(int track_id, bool enabled);
     void set_inspector_visible(bool visible);
@@ -95,6 +97,7 @@ public:
 
 protected:
     void closeEvent(QCloseEvent* event) override;
+    void showEvent(QShowEvent* event) override;
 
 private:
     void build_menus();
@@ -107,6 +110,7 @@ private:
     void process_game_events(uint64_t now_ms);
     void check_and_show_high_score(float final_score);
 
+    void on_show_endless_dialog();
     void on_show_records();
     void on_show_explain();
     void on_show_author();
@@ -130,6 +134,8 @@ private:
     InspectorDialog* inspector_dlg_ = nullptr;
     QTimer* tick_timer_ = nullptr;
     bool show_hint_overlay_ = false;
+    core::EndlessConfig last_endless_cfg_{};
+    bool applied_initial_fullscreen_ = false;
 
     // Top-level menus: 遊戲(&G) - 背景聲音(&B) - 設定(&S) - 關於(&A)
     QMenu* menu_game_ = nullptr;
@@ -139,6 +145,7 @@ private:
 
     // Game menu actions
     QAction* act_new_game_ = nullptr;
+    QAction* act_endless_game_ = nullptr;
     QAction* act_give_up_ = nullptr;
     QAction* act_records_ = nullptr;
     QAction* act_exit_ = nullptr;
@@ -173,6 +180,7 @@ private:
     QActionGroup* group_scale_filter_ = nullptr;
     QAction* act_filter_nearest_ = nullptr;
     QAction* act_filter_bilinear_ = nullptr;
+    QAction* act_fullscreen_ = nullptr;
 
     QAction* act_import_hst_ = nullptr;
     QAction* act_export_hst_ = nullptr;

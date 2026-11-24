@@ -17,6 +17,7 @@ int main(int argc, char* argv[]) {
     std::filesystem::path screenshot_path;
     std::filesystem::path explain_screenshot_path;
     std::filesystem::path about_screenshot_path;
+    std::filesystem::path endless_screenshot_path;
     std::string forced_lang;
     bool smoke_test = false;
 
@@ -32,6 +33,8 @@ int main(int argc, char* argv[]) {
             explain_screenshot_path = argv[++i];
         } else if (arg == "--about-screenshot" && i + 1 < argc) {
             about_screenshot_path = argv[++i];
+        } else if (arg == "--endless-screenshot" && i + 1 < argc) {
+            endless_screenshot_path = argv[++i];
         } else if (arg == "--lang" && i + 1 < argc) {
             forced_lang = argv[++i];
         }
@@ -114,10 +117,13 @@ int main(int argc, char* argv[]) {
             app.render_frame();
         }
 
-        // 4. Test live scaling & filter presets
+        // 4. Test live scaling, filter presets, and borderless fullscreen toggle
         app.set_scale_mode(llk2::core::WindowScaleMode::Scale1_5x);
         app.set_scale_filter(llk2::core::ScaleFilter::Bilinear);
         app.render_frame();
+        app.set_borderless_fullscreen(true);
+        app.render_frame();
+        app.set_borderless_fullscreen(false);
         app.set_scale_mode(llk2::core::WindowScaleMode::Scale1x);
         app.set_scale_filter(llk2::core::ScaleFilter::Nearest);
         app.render_frame();
@@ -159,6 +165,27 @@ int main(int argc, char* argv[]) {
         app.render_frame();
         if (!about_screenshot_path.empty()) {
             app.save_screenshot(about_screenshot_path);
+        }
+
+        // 8. Test Endless Mode modal + launching Endless Mode
+        app.open_endless_modal();
+        app.render_frame();
+        app.render_frame();
+        if (!endless_screenshot_path.empty()) {
+            app.save_screenshot(endless_screenshot_path);
+        }
+        llk2::core::EndlessConfig ecfg;
+        ecfg.type = llk2::core::EndlessModeType::AllLevels;
+        ecfg.shuffle = true;
+        ecfg.no_time_limit = true;
+        ecfg.unlimited_shuffle = true;
+        app.trigger_endless_game(ecfg);
+        app.render_frame();
+        if (!gs.is_endless() || !gs.no_time_limit() || !gs.unlimited_shuffle()) {
+            std::fprintf(stderr, "[FAIL] llk2-imgui smoke_test: endless game failed to start\n");
+            app.shutdown();
+            audio.shutdown();
+            return 4;
         }
 
         app.trigger_give_up();

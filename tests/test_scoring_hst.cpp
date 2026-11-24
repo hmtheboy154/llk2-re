@@ -205,11 +205,212 @@ static void test_gamestate_progression() {
     assert(gs.sel1_c() == 4 && gs.sel1_r() == 1);
 }
 
+static void clear_current_stage(GameState& gs, uint64_t& t_ms) {
+    int c1 = static_cast<int>(gs.board().hint_x1());
+    int r1 = static_cast<int>(gs.board().hint_y1());
+    int c2 = static_cast<int>(gs.board().hint_x2());
+    int r2 = static_cast<int>(gs.board().hint_y2());
+    for (int r = 0; r < Board::kRows; ++r) {
+        for (int c = 0; c < Board::kCols; ++c) {
+            if ((c == c1 && r == r1) || (c == c2 && r == r2)) continue;
+            gs.board().cell(c, r).occupied = false;
+        }
+    }
+    gs.board().set_tiles_left(2);
+    gs.on_mouse_down(1, 21.0f + c1 * 40 + 10, 6.0f + r1 * 50 + 10, t_ms += 10);
+    gs.on_mouse_down(1, 21.0f + c2 * 40 + 10, 6.0f + r2 * 50 + 10, t_ms += 10);
+    assert(gs.animating_link());
+    gs.tick(t_ms += 250);
+    assert(gs.awaiting_modal());
+}
+
+static void test_endless_mode_and_fullscreen_config() {
+    // 1. Verify borderless_fullscreen persists in config.json
+    auto tmp_cfg = std::filesystem::temp_directory_path() / "llk2_test_fs_cfg.json";
+    Config cfg;
+    cfg.borderless_fullscreen = true;
+    cfg.scale_mode = WindowScaleMode::Scale2x;
+    assert(cfg.save(tmp_cfg));
+    Config cfg2;
+    assert(cfg2.load(tmp_cfg));
+    assert(cfg2.borderless_fullscreen == true);
+    assert(cfg2.scale_mode == WindowScaleMode::Scale2x);
+    std::filesystem::remove(tmp_cfg);
+
+    // 2. Endless All Levels (sequential): must cycle 0..6 -> 0 endlessly and never record scores
+    GameState gs;
+    EndlessConfig ec_seq;
+    ec_seq.type = EndlessModeType::AllLevels;
+    ec_seq.shuffle = false;
+    ec_seq.no_time_limit = false;
+    uint64_t t = 1000;
+    gs.start_endless_game(ec_seq, t);
+    assert(gs.is_endless() && !gs.no_time_limit() && gs.endless_stage_count() == 1 && gs.level() == 0);
+
+    for (int step = 0; step < 8; ++step) {
+        assert(gs.level() == (step % 7));
+        assert(gs.endless_stage_count() == step + 1);
+        clear_current_stage(gs, t);
+        auto evs = gs.consume_events();
+        bool saw_clear = false;
+        for (const auto& ev : evs) {
+            assert(ev.type != GameEventType::AllStagesClearModal);
+            if (ev.type == GameEventType::StageClearModal) {
+                saw_clear = true;
+                assert(ev.is_endless && !ev.records_score);
+                assert(ev.next_level_display == step + 2);
+                assert(ev.next_shift_level == ((step + 1) % 7));
+            }
+        }
+        assert(saw_clear);
+        gs.acknowledge_modal(t += 50);
+        assert(!gs.in_title_screen() && gs.board_active());
+    }
+    assert(gs.endless_stage_count() == 9 && gs.level() == 1);
+
+    // Timed Endless timeout must NEVER record high scores
+    gs.tick(t += 610000);
+    assert(gs.awaiting_modal());
+    {
+        auto evs = gs.consume_events();
+        bool saw_timeout = false;
+        for (const auto& ev : evs) {
+            if (ev.type == GameEventType::TimeoutGameOverModal) {
+                saw_timeout = true;
+                assert(ev.is_endless && !ev.records_score);
+            }
+        }
+        assert(saw_timeout);
+    }
+    gs.acknowledge_modal(t += 50);
+    assert(gs.in_title_screen() && !gs.is_endless());
+
+    // 3. Endless All Levels (bag shuffled): 7 stages per bag, never repeats consecutively
+    EndlessConfig ec_shuf;
+    ec_shuf.type = EndlessModeType::AllLevels;
+    ec_shuf.shuffle = true;
+    ec_shuf.no_time_limit = true;
+    gs.start_endless_game(ec_shuf, t += 100);
+    assert(gs.is_endless() && gs.no_time_limit());
+
+    // Advancing past 600s in No Time Limit mode must NEVER time out
+    gs.tick(t += 700000);
+    assert(!gs.awaiting_modal() && gs.board_active() && gs.remaining_seconds() == 600);
+
+    int prev_lvl = -1;
+    uint8_t bag_seen = 0;
+    for (int step = 0; step < 14; ++step) {
+        int cur = gs.level();
+        assert(cur >= 0 && cur <= 6);
+        assert(cur != prev_lvl);
+        bag_seen |= static_cast<uint8_t>(1u << cur);
+        prev_lvl = cur;
+        if (step == 6 || step == 13) {
+            assert(bag_seen == 0x7F);
+            bag_seen = 0;
+        }
+        clear_current_stage(gs, t);
+        gs.consume_events();
+        gs.acknowledge_modal(t += 50);
+    }
+
+    // 4. Endless Specific Level(s) Loop: stages 3 (lvl 2) and 6 (lvl 5)
+    EndlessConfig ec_spec;
+    ec_spec.type = EndlessModeType::SpecificLevels;
+    ec_spec.level_mask = static_cast<uint8_t>((1u << 2) | (1u << 5));
+    ec_spec.shuffle = false;
+    ec_spec.no_time_limit = true;
+    gs.start_endless_game(ec_spec, t += 100);
+    const int expected[4] = {2, 5, 2, 5};
+    for (int step = 0; step < 4; ++step) {
+        assert(gs.level() == expected[step]);
+        clear_current_stage(gs, t);
+        gs.consume_events();
+        gs.acknowledge_modal(t += 50);
+    }
+
+    // 5. Endless Unlimited Shuffle: survives >10 deadlocks without losing lives or game-overing
+    EndlessConfig ec_unlim;
+    ec_unlim.type = EndlessModeType::SpecificLevels;
+    ec_unlim.level_mask = 0x01; // Stage 1 (Static)
+    ec_unlim.no_time_limit = false;
+    ec_unlim.unlimited_shuffle = true;
+    gs.start_endless_game(ec_unlim, t += 100);
+    assert(gs.is_endless() && gs.unlimited_shuffle() && gs.lives() == 10);
+
+    for (int round = 0; round < 15; ++round) {
+        gs.board().clear_all();
+        // 8x6 solid block (cols 2..9, rows 2..7): 24 interior cells + 24 boundary cells.
+        // Pairing each boundary cell with a completely enclosed interior cell guarantees 0 valid moves!
+        int16_t interior_idx = 0;
+        int16_t boundary_id = 1;
+        for (int r = 2; r <= 7; ++r) {
+            for (int c = 2; c <= 9; ++c) {
+                bool is_interior = (c >= 3 && c <= 8 && r >= 3 && r <= 6);
+                int16_t tid = is_interior ? static_cast<int16_t>((interior_idx++ + 12) % 24 + 1)
+                                          : boundary_id++;
+                gs.board().cell(c, r) = {true, tid, tid};
+            }
+        }
+        assert(interior_idx == 24 && boundary_id == 25);
+        assert(!gs.board().has_valid_move());
+
+        // Add one immediately clickable pair at (14, 2) & (14, 3) outside the 8x6 block
+        gs.board().cell(14, 2) = {true, int16_t(30), int16_t(30)};
+        gs.board().cell(14, 3) = {true, int16_t(30), int16_t(30)};
+        gs.board().set_tiles_left(50);
+
+        gs.on_mouse_down(1, 21.0f + 14 * 40 + 10, 6.0f + 2 * 50 + 10, t += 10);
+        gs.on_mouse_down(1, 21.0f + 14 * 40 + 10, 6.0f + 3 * 50 + 10, t += 10);
+        assert(gs.animating_link());
+        gs.tick(t += 250);
+
+        // Must have auto-shuffled out of deadlock with lives unchanged at 10 and zero Game Over modal
+        assert(!gs.awaiting_modal() && gs.board_active());
+        assert(gs.lives() == 10);
+        assert(gs.board().has_valid_move());
+        auto evs = gs.consume_events();
+        bool saw_shuffle_sfx = false;
+        for (const auto& ev : evs) {
+            assert(ev.type != GameEventType::NoMovesGameOverModal);
+            if (ev.type == GameEventType::PlaySfx && ev.sfx_id == 206) {
+                saw_shuffle_sfx = true;
+            }
+        }
+        assert(saw_shuffle_sfx);
+    }
+
+    // Stage clear with unlimited_shuffle keeps lives fixed at 10
+    clear_current_stage(gs, t);
+    gs.consume_events();
+    assert(gs.lives() == 10);
+    gs.acknowledge_modal(t += 50);
+    assert(gs.lives() == 10);
+
+    // Timeout with unlimited_shuffle awards 0 life bonus
+    gs.tick(t += 610000);
+    assert(gs.awaiting_modal());
+    {
+        auto evs = gs.consume_events();
+        bool saw_timeout = false;
+        for (const auto& ev : evs) {
+            if (ev.type == GameEventType::TimeoutGameOverModal) {
+                saw_timeout = true;
+                assert(ev.bonus == 0 && !ev.records_score);
+            }
+        }
+        assert(saw_timeout);
+    }
+    gs.acknowledge_modal(t += 50);
+    assert(!gs.unlimited_shuffle());
+}
+
 int main() {
     test_scramble_roundtrip();
     test_hst_and_json_persistence();
     test_config_and_i18n();
     test_gamestate_progression();
+    test_endless_mode_and_fullscreen_config();
     std::printf("[PASS] test_scoring_hst\n");
     return 0;
 }

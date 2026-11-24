@@ -179,12 +179,16 @@ static void test_renderer_and_audio_with_assets(const std::filesystem::path& ass
     assert(langs[0] == "zh-TW" && langs[1] == "zh-CN" && langs[2] == "en" && langs[3] == "vi");
 
     const char* required_keys[] = {
-        "app.title", "menu.game", "menu.audio", "menu.settings", "menu.about",
-        "menu.settings.language", "menu.settings.inspector", "menu.settings.theme",
-        "dialog.explain.title", "dialog.btn.close", "inspector.title",
+        "app.title", "menu.game", "menu.game.endless", "menu.audio", "menu.settings", "menu.about",
+        "menu.settings.language", "menu.settings.fullscreen", "menu.settings.inspector", "menu.settings.theme",
+        "dialog.explain.title", "dialog.btn.close", "dialog.endless.title", "dialog.endless.note",
+        "dialog.endless.all_levels", "dialog.endless.shuffle", "dialog.endless.specific_levels",
+        "dialog.endless.no_time_limit", "dialog.endless.unlimited_shuffle", "dialog.endless.stage_fmt",
+        "inspector.title", "inspector.mode.endless", "inspector.time_unlimited", "inspector.lives_unlimited",
         "inspector.hint_hidden", "inspector.highlight_hint",
         "about.credits.original", "about.credits.sc_trans", "about.credits.remaster",
-        "msg.stage_clear.body", "msg.all_clear.body"
+        "msg.stage_clear.body", "msg.endless_clear.body", "msg.endless_clear_notime.body",
+        "msg.timeout_unlim_shuffle.body", "msg.all_clear.body"
     };
     for (const char* lang : {"zh-TW", "zh-CN", "en", "vi"}) {
         assert(i18n.set_language(lang));
@@ -224,6 +228,19 @@ static void test_renderer_and_audio_with_assets(const std::filesystem::path& ass
     assert(snap_hidden.has_valid_hint);
     assert(snap_hidden.next_hint == i18n.tr("inspector.hint_hidden"));
     assert(snap_shown.next_hint.find("<->") != std::string::npos);
+
+    // Verify Inspector snapshot in Endless Mode (Unlimited time + Unlimited lives + Endless #1 stage)
+    llk2::core::EndlessConfig ecfg;
+    ecfg.type = llk2::core::EndlessModeType::SpecificLevels;
+    ecfg.level_mask = static_cast<uint8_t>(1u << 4);
+    ecfg.no_time_limit = true;
+    ecfg.unlimited_shuffle = true;
+    gs.start_endless_game(ecfg, 2000);
+    auto snap_endless = llk2::ui::common::build_inspector_snapshot(gs, audio, cfg, i18n, false);
+    assert(snap_endless.mode == i18n.tr("inspector.mode.endless"));
+    assert(snap_endless.stage.rfind("#1 (", 0) == 0);
+    assert(snap_endless.time_left == i18n.tr("inspector.time_unlimited"));
+    assert(snap_endless.lives_score.find(i18n.tr("inspector.lives_unlimited")) != std::string::npos);
 }
 
 int main() {

@@ -21,6 +21,7 @@ int main(int argc, char* argv[]) {
     std::filesystem::path work_dir = std::filesystem::current_path();
     std::filesystem::path custom_assets_dir;
     std::filesystem::path about_screenshot_path;
+    std::filesystem::path endless_screenshot_path;
     std::string forced_lang;
     bool smoke_test = false;
 
@@ -34,6 +35,8 @@ int main(int argc, char* argv[]) {
             forced_lang = argv[++i];
         } else if (arg == "--screenshot-about" && i + 1 < argc) {
             about_screenshot_path = argv[++i];
+        } else if (arg == "--screenshot-endless" && i + 1 < argc) {
+            endless_screenshot_path = argv[++i];
         }
     }
 
@@ -102,9 +105,11 @@ int main(int argc, char* argv[]) {
                 }
             }
 
-            // 3. Test live scaling & filter changes
+            // 3. Test live scaling, filter, and borderless fullscreen toggle
             win.set_scale_mode(llk2::core::WindowScaleMode::Scale1_5x);
             win.set_scale_filter(llk2::core::ScaleFilter::Bilinear);
+            win.set_borderless_fullscreen(true);
+            win.set_borderless_fullscreen(false);
             win.set_scale_mode(llk2::core::WindowScaleMode::Scale1x);
             win.set_scale_filter(llk2::core::ScaleFilter::Nearest);
 
@@ -147,9 +152,31 @@ int main(int argc, char* argv[]) {
                 author_dlg.grab().save(QString::fromStdString(about_screenshot_path.string()));
             }
             author_dlg.close();
+
+            llk2::core::EndlessConfig ecfg;
+            ecfg.type = llk2::core::EndlessModeType::SpecificLevels;
+            ecfg.level_mask = static_cast<uint8_t>((1u << 0) | (1u << 3) | (1u << 6));
+            ecfg.shuffle = true;
+            ecfg.no_time_limit = true;
+            ecfg.unlimited_shuffle = true;
+            llk2::ui::qt::EndlessDialog endless_dlg(i18n, ecfg, &win);
+            endless_dlg.show();
+            endless_dlg.repaint();
+            if (!endless_screenshot_path.empty()) {
+                endless_dlg.grab().save(QString::fromStdString(endless_screenshot_path.string()));
+            }
+            endless_dlg.close();
             if (!forced_lang.empty()) {
                 win.set_language("zh-TW");
             }
+
+            win.trigger_endless_game(ecfg);
+            if (!gs.is_endless() || !gs.no_time_limit() || !gs.unlimited_shuffle()) {
+                std::fprintf(stderr, "[FAIL] smoke_test: endless game failed to start\n");
+                app.exit(4);
+                return;
+            }
+            win.trigger_new_game();
 
             win.set_inspector_visible(true);
             win.set_hint_highlight(true);

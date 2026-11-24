@@ -1,13 +1,18 @@
 #include "ui/qt/image_dialogs.hpp"
 
+#include <QCheckBox>
 #include <QFont>
 #include <QFrame>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPainter>
 #include <QPixmap>
+#include <QPushButton>
+#include <QRadioButton>
 #include <QRectF>
 #include <QVBoxLayout>
+#include <array>
 #include <cstdio>
 
 namespace llk2::ui::qt {
@@ -226,6 +231,128 @@ AboutDialog::AboutDialog(const media::RgbaSurface& author_surf,
 
     right_col->addStretch(1);
     root->addLayout(right_col, 1);
+}
+
+EndlessDialog::EndlessDialog(const core::I18n& i18n,
+                             const core::EndlessConfig& initial,
+                             QWidget* parent)
+    : QDialog(parent, Qt::Dialog | Qt::WindowTitleHint | Qt::WindowCloseButtonHint),
+      result_(initial) {
+    auto qtr = [&](std::string_view key) { return QString::fromStdString(i18n.tr(key)); };
+
+    setWindowTitle(qtr("dialog.endless.title"));
+    setModal(true);
+    setMinimumWidth(390);
+
+    auto* root = new QVBoxLayout(this);
+    root->setContentsMargins(16, 14, 16, 14);
+    root->setSpacing(10);
+
+    auto* note_lbl = new QLabel(qtr("dialog.endless.note"), this);
+    note_lbl->setWordWrap(true);
+    QFont note_font = note_lbl->font();
+    note_font.setItalic(true);
+    note_lbl->setFont(note_font);
+    root->addWidget(note_lbl);
+
+    auto make_sep = [this]() {
+        auto* s = new QFrame(this);
+        s->setFrameShape(QFrame::HLine);
+        s->setFrameShadow(QFrame::Sunken);
+        return s;
+    };
+    root->addWidget(make_sep());
+
+    auto* rb_all = new QRadioButton(qtr("dialog.endless.all_levels"), this);
+    auto* chk_shuffle = new QCheckBox(qtr("dialog.endless.shuffle"), this);
+    chk_shuffle->setChecked(initial.shuffle);
+
+    auto* rb_specific = new QRadioButton(qtr("dialog.endless.specific_levels"), this);
+
+    root->addWidget(rb_all);
+    auto* shuffle_row = new QHBoxLayout();
+    shuffle_row->setContentsMargins(24, 0, 0, 4);
+    shuffle_row->addWidget(chk_shuffle);
+    root->addLayout(shuffle_row);
+
+    root->addWidget(rb_specific);
+
+    auto* lvl_wrap = new QWidget(this);
+    auto* lvl_grid = new QGridLayout(lvl_wrap);
+    lvl_grid->setContentsMargins(24, 2, 0, 4);
+    lvl_grid->setHorizontalSpacing(14);
+    lvl_grid->setVerticalSpacing(6);
+
+    std::array<QCheckBox*, 7> chk_levels{};
+    for (int i = 0; i < 7; ++i) {
+        chk_levels[i] = new QCheckBox(QString::fromStdString(common::format_endless_stage_label(i, i18n)), lvl_wrap);
+        chk_levels[i]->setChecked((initial.level_mask & (1u << i)) != 0);
+        lvl_grid->addWidget(chk_levels[i], i % 4, i / 4);
+    }
+    root->addWidget(lvl_wrap);
+
+    root->addWidget(make_sep());
+
+    auto* chk_no_time = new QCheckBox(qtr("dialog.endless.no_time_limit"), this);
+    chk_no_time->setChecked(initial.no_time_limit);
+    root->addWidget(chk_no_time);
+
+    auto* chk_unlim_shuffle = new QCheckBox(qtr("dialog.endless.unlimited_shuffle"), this);
+    chk_unlim_shuffle->setChecked(initial.unlimited_shuffle);
+    root->addWidget(chk_unlim_shuffle);
+
+    auto* btn_row = new QHBoxLayout();
+    btn_row->addStretch(1);
+    auto* btn_start = new QPushButton(qtr("dialog.endless.btn.start"), this);
+    btn_start->setDefault(true);
+    btn_start->setMinimumWidth(92);
+    auto* btn_cancel = new QPushButton(qtr("dialog.endless.btn.cancel"), this);
+    btn_cancel->setMinimumWidth(92);
+    btn_row->addWidget(btn_start);
+    btn_row->addWidget(btn_cancel);
+    root->addLayout(btn_row);
+
+    auto sync_state = [rb_all, rb_specific, chk_shuffle, lvl_wrap, chk_levels, btn_start]() {
+        bool is_specific = rb_specific->isChecked();
+        lvl_wrap->setEnabled(is_specific);
+        int selected_cnt = 0;
+        for (int i = 0; i < 7; ++i) {
+            if (chk_levels[i]->isChecked()) ++selected_cnt;
+        }
+        chk_shuffle->setEnabled(!is_specific || selected_cnt > 1);
+        btn_start->setEnabled(!is_specific || selected_cnt > 0);
+        (void)rb_all;
+    };
+
+    if (initial.type == core::EndlessModeType::SpecificLevels) {
+        rb_specific->setChecked(true);
+    } else {
+        rb_all->setChecked(true);
+    }
+    sync_state();
+
+    connect(rb_all, &QRadioButton::toggled, this, [sync_state](bool) { sync_state(); });
+    connect(rb_specific, &QRadioButton::toggled, this, [sync_state](bool) { sync_state(); });
+    for (int i = 0; i < 7; ++i) {
+        connect(chk_levels[i], &QCheckBox::toggled, this, [sync_state](bool) { sync_state(); });
+    }
+
+    connect(btn_cancel, &QPushButton::clicked, this, &QDialog::reject);
+    connect(btn_start, &QPushButton::clicked, this, [this, rb_specific, chk_shuffle, chk_no_time, chk_unlim_shuffle, chk_levels]() {
+        result_.type = rb_specific->isChecked() ? core::EndlessModeType::SpecificLevels
+                                                : core::EndlessModeType::AllLevels;
+        uint8_t mask = 0;
+        for (int i = 0; i < 7; ++i) {
+            if (chk_levels[i]->isChecked()) {
+                mask |= static_cast<uint8_t>(1u << i);
+            }
+        }
+        result_.level_mask = (mask != 0) ? mask : 0x01;
+        result_.shuffle = chk_shuffle->isChecked();
+        result_.no_time_limit = chk_no_time->isChecked();
+        result_.unlimited_shuffle = chk_unlim_shuffle->isChecked();
+        accept();
+    });
 }
 
 } // namespace llk2::ui::qt
