@@ -116,6 +116,24 @@ static void test_config_and_i18n() {
 
     assert(i18n.set_language("zh-CN"));
     assert(i18n.tr("menu.settings") == "设置(&S)");
+
+    // Verify OS locale -> language auto-detection mapping
+    assert(i18n.map_locale_to_language("zh_TW.UTF-8") == "zh-TW");
+    assert(i18n.map_locale_to_language("zh-Hant-TW") == "zh-TW");
+    assert(i18n.map_locale_to_language("zh_HK.UTF-8") == "zh-TW");
+    assert(i18n.map_locale_to_language("zh-MO") == "zh-TW");
+    assert(i18n.map_locale_to_language("zh_CN.UTF-8") == "zh-CN");
+    assert(i18n.map_locale_to_language("zh-Hans-CN") == "zh-CN");
+    assert(i18n.map_locale_to_language("zh_SG.UTF-8") == "zh-CN");
+    assert(i18n.map_locale_to_language("zh") == "zh-CN");
+    assert(i18n.map_locale_to_language("vi_VN.UTF-8") == "vi");
+    assert(i18n.map_locale_to_language("vi-VN") == "vi");
+    assert(i18n.map_locale_to_language("en_US.UTF-8") == "en");
+    assert(i18n.map_locale_to_language("en-GB") == "en");
+    assert(i18n.map_locale_to_language("ja_JP.UTF-8") == "en");
+    assert(i18n.map_locale_to_language("C.UTF-8") == "en");
+    assert(i18n.map_locale_to_language("") == "en");
+    assert(!i18n.detect_system_language().empty());
 }
 
 static void test_gamestate_progression() {

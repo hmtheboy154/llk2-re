@@ -59,7 +59,10 @@ int main(int argc, char* argv[]) {
     if (std::filesystem::exists(paths.locales_dir())) {
         i18n.load_locales_dir(paths.locales_dir());
     }
-    i18n.set_language(config.language);
+    if (config.language.empty() || !i18n.set_language(config.language)) {
+        config.language = i18n.detect_system_language();
+        i18n.set_language(config.language);
+    }
 
     llk2::core::HighScoreTable scores;
     if (!scores.load_json(paths.scores_file())) {

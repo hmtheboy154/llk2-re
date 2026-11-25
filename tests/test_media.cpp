@@ -34,8 +34,13 @@ static std::filesystem::path ensure_test_assets(bool& created_temp) {
     std::filesystem::path extractor = src_dir / "tools" / "extract_assets.py";
     if (std::filesystem::exists(exe_candidate) && std::filesystem::exists(extractor)) {
         auto tmp_assets = std::filesystem::temp_directory_path() / "llk2_test_extracted_assets";
+#if defined(_WIN32)
+        std::string cmd = "\"python \"" + extractor.string() + "\" \"" + exe_candidate.string() +
+                          "\" -o \"" + tmp_assets.string() + "\" > NUL 2>&1\"";
+#else
         std::string cmd = "python3 \"" + extractor.string() + "\" \"" + exe_candidate.string() +
                           "\" -o \"" + tmp_assets.string() + "\" > /dev/null 2>&1";
+#endif
         if (std::system(cmd.c_str()) == 0 && std::filesystem::exists(tmp_assets / "images")) {
             created_temp = true;
             return tmp_assets;
@@ -112,7 +117,11 @@ static void test_renderer_and_audio_with_assets(const std::filesystem::path& ass
     assert(scaled_bilinear.width == 1152 && scaled_bilinear.height == 825);
 
     // 2. Verify AudioEngine (WAV SFX + Embedded SoundFont MIDI + Native OS MIDI + Track Rotation)
+#if defined(_WIN32)
+    _putenv_s("SDL_AUDIODRIVER", "dummy");
+#else
     setenv("SDL_AUDIODRIVER", "dummy", 1);
+#endif
 
     Config cfg;
     cfg.midi_backend = MidiBackend::EmbeddedSoundFont;

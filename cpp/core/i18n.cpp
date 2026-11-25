@@ -2,8 +2,17 @@
 #include "builtin_locales.hpp"
 
 #include <algorithm>
+#include <cctype>
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
+
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 namespace llk2::core {
 
@@ -118,6 +127,123 @@ std::vector<std::string> I18n::available_languages() const {
     }
     std::sort(langs.begin(), langs.end());
     return langs;
+}
+
+static std::string to_lower_ascii_str(std::string_view sv) {
+    std::string out(sv);
+    for (char& c : out) {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return out;
+}
+
+std::string I18n::raw_system_locale() {
+#if defined(_WIN32)
+    wchar_t wbuf[LOCALE_NAME_MAX_LENGTH] = {};
+    if (GetUserDefaultLocaleName(wbuf, LOCALE_NAME_MAX_LENGTH) > 0) {
+        std::string out;
+        for (size_t i = 0; wbuf[i] != L'\0'; ++i) {
+            if (wbuf[i] < 128) {
+                out.push_back(static_cast<char>(wbuf[i]));
+            }
+        }
+        if (!out.empty()) {
+            return out;
+        }
+    }
+#endif
+    auto get_env_nonempty = [](const char* name) -> std::string {
+#if defined(_WIN32)
+        char* val = nullptr;
+        size_t len = 0;
+        if (_dupenv_s(&val, &len, name) == 0 && val) {
+            std::string s(val);
+            std::free(val);
+            return s;
+        }
+        return {};
+#else
+        const char* val = std::getenv(name);
+        return val ? std::string(val) : std::string();
+#endif
+    };
+
+    // POSIX LANGUAGE can be a colon-separated preference list (e.g. "vi_VN:vi:en_US")
+    std::string language_list = get_env_nonempty("LANGUAGE");
+    if (!language_list.empty()) {
+        size_t start = 0;
+        while (start <= language_list.size()) {
+            size_t end = language_list.find(':', start);
+            std::string seg = (end == std::string::npos)
+                                  ? language_list.substr(start)
+                                  : language_list.substr(start, end - start);
+            std::string low = to_lower_ascii_str(seg);
+            if (!low.empty() && low != "c" && low != "posix" && low.rfind("c.", 0) != 0) {
+                return seg;
+            }
+            if (end == std::string::npos) break;
+            start = end + 1;
+        }
+    }
+
+    for (const char* var : {"LC_ALL", "LC_MESSAGES", "LANG"}) {
+        std::string val = get_env_nonempty(var);
+        if (!val.empty()) {
+            return val;
+        }
+    }
+    return {};
+}
+
+std::string I18n::map_locale_to_language(std::string_view raw_locale) const {
+    auto fallback = [&]() -> std::string {
+        if (catalogs_.find("en") != catalogs_.end()) return "en";
+        if (catalogs_.find("zh-TW") != catalogs_.end()) return "zh-TW";
+        return catalogs_.empty() ? std::string("en") : catalogs_.begin()->first;
+    };
+
+    // Strip encoding (".UTF-8") and modifier ("@euro"), normalize '_' -> '-' and lowercase
+    size_t cut = raw_locale.find_first_of(".@");
+    std::string norm = to_lower_ascii_str(cut == std::string_view::npos ? raw_locale : raw_locale.substr(0, cut));
+    std::replace(norm.begin(), norm.end(), '_', '-');
+
+    if (norm.empty() || norm == "c" || norm == "posix") {
+        return fallback();
+    }
+
+    // 1. Exact case-insensitive match against loaded catalogs (supports zh-TW, zh-CN, or custom pt-BR.json)
+    for (const auto& kv : catalogs_) {
+        if (to_lower_ascii_str(kv.first) == norm) {
+            return kv.first;
+        }
+    }
+
+    // 2. Chinese script / region disambiguation (Traditional vs Simplified)
+    if (norm == "zh" || norm.rfind("zh-", 0) == 0) {
+        bool traditional = (norm.find("hant") != std::string::npos) ||
+                           (norm.find("-tw") != std::string::npos) ||
+                           (norm.find("-hk") != std::string::npos) ||
+                           (norm.find("-mo") != std::string::npos);
+        std::string target = traditional ? "zh-TW" : "zh-CN";
+        if (catalogs_.find(target) != catalogs_.end()) {
+            return target;
+        }
+    }
+
+    // 3. Primary language subtag match (e.g. "vi-vn" -> "vi", "en-us" -> "en", "ja-jp" -> custom "ja")
+    size_t dash = norm.find('-');
+    std::string primary = (dash == std::string::npos) ? norm : norm.substr(0, dash);
+    for (const auto& kv : catalogs_) {
+        if (to_lower_ascii_str(kv.first) == primary) {
+            return kv.first;
+        }
+    }
+
+    return fallback();
+}
+
+std::string I18n::detect_system_language() const {
+    return map_locale_to_language(raw_system_locale());
 }
 
 std::string I18n::tr(std::string_view key) const {

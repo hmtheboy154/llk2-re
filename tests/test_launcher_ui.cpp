@@ -27,8 +27,13 @@ int main() {
         std::filesystem::path extractor = src_dir / "tools" / "extract_assets.py";
         assert(std::filesystem::exists(exe_candidate) && std::filesystem::exists(extractor));
         base_assets = std::filesystem::temp_directory_path() / "llk2_test_launcher_base_assets";
+#if defined(_WIN32)
+        std::string extract_cmd = "\"python \"" + extractor.string() + "\" \"" + exe_candidate.string() +
+                                  "\" -o \"" + base_assets.string() + "\" > NUL 2>&1\"";
+#else
         std::string extract_cmd = "python3 \"" + extractor.string() + "\" \"" + exe_candidate.string() +
                                   "\" -o \"" + base_assets.string() + "\" > /dev/null 2>&1";
+#endif
         assert(std::system(extract_cmd.c_str()) == 0);
         created_temp = true;
     }
@@ -119,8 +124,13 @@ int main() {
     }
 
     // 8. Run headless Qt 6 llk2-launcher --smoke-test
-    std::string cmd = "QT_QPA_PLATFORM=offscreen \"" + launcher_bin.string() +
-                      "\" --data-dir \"" + tmp_work.string() + "\" --smoke-test";
+#if defined(_WIN32)
+    _putenv_s("QT_QPA_PLATFORM", "offscreen");
+    std::string cmd = "\"\"" + launcher_bin.string() + "\" --data-dir \"" + tmp_work.string() + "\" --smoke-test\"";
+#else
+    setenv("QT_QPA_PLATFORM", "offscreen", 1);
+    std::string cmd = "\"" + launcher_bin.string() + "\" --data-dir \"" + tmp_work.string() + "\" --smoke-test";
+#endif
     int rc = std::system(cmd.c_str());
 
     if (created_temp) {

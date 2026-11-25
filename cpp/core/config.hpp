@@ -33,7 +33,7 @@ struct Config {
     WindowScaleMode scale_mode = WindowScaleMode::Scale1x;
     ScaleFilter scale_filter = ScaleFilter::Nearest;
     bool borderless_fullscreen = false;
-    std::string language = "zh-TW";
+    std::string language; // Empty = auto-detect from OS locale on first launch
     std::string soundfont_path;
     std::string player_name = "Player";
 

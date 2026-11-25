@@ -29,6 +29,16 @@ public:
 
     std::vector<std::string> available_languages() const;
 
+    // Query raw OS locale tag (Win32 GetUserDefaultLocaleName / POSIX LANGUAGE, LC_ALL, LC_MESSAGES, LANG).
+    static std::string raw_system_locale();
+
+    // Map an arbitrary OS locale string (e.g. "vi_VN.UTF-8", "zh-HK", "en-US") to the best available catalog,
+    // falling back to "en" (or "zh-TW" if "en" is unavailable).
+    std::string map_locale_to_language(std::string_view raw_locale) const;
+
+    // Detect the best initial language from the user's OS locale settings.
+    std::string detect_system_language() const;
+
     // Translates a key into the active language (falling back to zh-TW, then returning key).
     std::string tr(std::string_view key) const;
 

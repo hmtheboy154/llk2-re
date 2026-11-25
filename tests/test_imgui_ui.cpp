@@ -19,19 +19,35 @@ int main() {
         std::filesystem::path extractor = src_dir / "tools" / "extract_assets.py";
         assert(std::filesystem::exists(exe_candidate) && std::filesystem::exists(extractor));
         assets_dir = std::filesystem::temp_directory_path() / "llk2_test_imgui_assets";
+#if defined(_WIN32)
+        std::string extract_cmd = "\"python \"" + extractor.string() + "\" \"" + exe_candidate.string() +
+                                  "\" -o \"" + assets_dir.string() + "\" > NUL 2>&1\"";
+#else
         std::string extract_cmd = "python3 \"" + extractor.string() + "\" \"" + exe_candidate.string() +
                                   "\" -o \"" + assets_dir.string() + "\" > /dev/null 2>&1";
+#endif
         assert(std::system(extract_cmd.c_str()) == 0);
         created_temp = true;
     }
 
     auto tmp_work = std::filesystem::temp_directory_path() / "llk2_test_imgui_workdir";
     std::filesystem::create_directories(tmp_work);
+    auto orig_cwd = std::filesystem::current_path();
+    std::filesystem::current_path(tmp_work);
 
-    std::string cmd = "cd \"" + tmp_work.string() + "\" && SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \"" +
-                      imgui_bin.string() + "\" --data-dir \"" + tmp_work.string() +
+#if defined(_WIN32)
+    _putenv_s("SDL_VIDEODRIVER", "dummy");
+    _putenv_s("SDL_AUDIODRIVER", "dummy");
+    std::string cmd = "\"\"" + imgui_bin.string() + "\" --data-dir \"" + tmp_work.string() +
+                      "\" --assets \"" + assets_dir.string() + "\" --smoke-test\"";
+#else
+    setenv("SDL_VIDEODRIVER", "dummy", 1);
+    setenv("SDL_AUDIODRIVER", "dummy", 1);
+    std::string cmd = "\"" + imgui_bin.string() + "\" --data-dir \"" + tmp_work.string() +
                       "\" --assets \"" + assets_dir.string() + "\" --smoke-test";
+#endif
     int rc = std::system(cmd.c_str());
+    std::filesystem::current_path(orig_cwd);
 
     if (created_temp) {
         std::filesystem::remove_all(assets_dir);
