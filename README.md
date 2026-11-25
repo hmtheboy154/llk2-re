@@ -4,6 +4,9 @@ This project aims to reconstruct a source code that is as close to the game [KAW
 - [The official version v1.02](https://web.archive.org/web/20060423174908/http://myweb.hinet.net:80/home4/cps-chen/history/d4s/d4s.htm) made by [CHEN PROGRAM STUDY](https://web.archive.org/web/20070615052321/http://myweb.hinet.net/home4/cps-chen/main.htm).
 - [The unofficial Simplified Chinese version v1.00-cn](http://www.llk.cn/LLK2/) made by Casm of [LLK.cn](http://www.llk.cn/) (Previously [www.LoveSnow.com](https://web.archive.org/web/20040729014651/http://www.lovesnow.com/)).
 
+> [!NOTE]
+> Looking for the modern cross-platform C++20/SDL remaster (Linux, Windows, macOS with Qt 6 / Dear ImGui / BUI frontends, Endless Mode, Borderless Fullscreen, and standalone Launcher)? Switch to the [`remastered`](../../tree/remastered) branch.
+
 ## Project status
 
 The game is fully decompiled, buildable & playable. However, due to the fact that it is being decompiled with LLM, accuracy is still unknown. Any help with evaluation & fixing is appreciated!
