@@ -284,8 +284,66 @@ def _copy_ost_tracks(ost_dir, assets_dir):
     return copied
 
 
+def _extract_exe_from_zip(zip_path):
+    """If input is a .zip archive containing D4s.exe / lianliankan2.ExE, return (temp_path, member_name)."""
+    import tempfile
+    import zipfile
+
+    with zipfile.ZipFile(zip_path, 'r') as zf:
+        exe_members = [
+            info for info in zf.infolist()
+            if not info.is_dir() and info.filename.lower().endswith('.exe')
+        ]
+        if not exe_members:
+            raise ValueError('No .exe file found inside archive: %s' % zip_path)
+        # Prefer known filenames or known SHA-256 matches
+        chosen = None
+        for info in exe_members:
+            data = zf.read(info)
+            if hashlib.sha256(data).hexdigest().lower() in KNOWN_HASHES:
+                chosen = (info, data)
+                break
+        if chosen is None:
+            for info in exe_members:
+                base = os.path.basename(info.filename).lower()
+                if base in ('d4s.exe', 'lianliankan2.exe'):
+                    chosen = (info, zf.read(info))
+                    break
+        if chosen is None:
+            chosen = (exe_members[0], zf.read(exe_members[0]))
+
+        info, data = chosen
+        fd, tmp_path = tempfile.mkstemp(prefix='llk2_zip_', suffix='.exe')
+        try:
+            os.write(fd, data)
+        finally:
+            os.close(fd)
+        return tmp_path, info.filename
+
+
 def extract_all(exe_path, out_dir=None, make_bmp=False, skip_hash=False, ost_dir=None):
-    """Extract images, icon, SFX WAVs, and MIDIs from <exe_path>."""
+    """Extract images, icon, SFX WAVs, and MIDIs from <exe_path> (or a .zip containing it)."""
+    temp_exe = None
+    if exe_path.lower().endswith('.zip'):
+        temp_exe, member = _extract_exe_from_zip(exe_path)
+        print('[extract] Unpacked %s from %s' % (member, os.path.basename(exe_path)))
+        exe_path = temp_exe
+
+    try:
+        return _extract_all_from_exe(
+            exe_path, out_dir=out_dir, make_bmp=make_bmp,
+            skip_hash=skip_hash, ost_dir=ost_dir
+        )
+    finally:
+        if temp_exe and os.path.isfile(temp_exe):
+            try:
+                os.remove(temp_exe)
+            except OSError:
+                pass
+
+
+def _extract_all_from_exe(exe_path, out_dir=None, make_bmp=False, skip_hash=False, ost_dir=None):
+    """Extract images, icon, SFX WAVs, and MIDIs from an unpacked/ASPack EXE file."""
     with open(exe_path, 'rb') as f:
         raw = f.read()
 

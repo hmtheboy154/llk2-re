@@ -26,6 +26,7 @@ endif()
 option(LLK2_UI_QT          "Build Qt 6 native desktop executable (llk2-qt)"      ON)
 option(LLK2_UI_IMGUI       "Build Dear ImGui executable (llk2-imgui)"            ${_LLK2_IMGUI_DEFAULT})
 option(LLK2_UI_BUI         "Build BUI native Blender-UI executable (llk2-bui)"   ${_LLK2_BUI_DEFAULT})
+option(LLK2_LAUNCHER       "Build standalone Qt 6 launcher (llk2-launcher)"      ON)
 option(LLK2_BUILD_TESTS    "Build CTest unit test suite"                         ON)
 
 # Optional system Fontconfig (used on Linux by llk2-imgui / llk2-bui for CJK font lookup)
@@ -318,6 +319,38 @@ if(LLK2_UI_BUI)
     llk2_copy_bundled_soundfont(llk2-bui)
 endif()
 
+# ── Phase 7: Standalone Qt 6 Launcher & Mod Manager (llk2-launcher) ──────────
+if(LLK2_LAUNCHER)
+    if(NOT TARGET Qt6::Widgets)
+        find_package(Qt6 COMPONENTS Core Gui Widgets REQUIRED)
+    endif()
+
+    add_executable(llk2-launcher
+        cpp/launcher/main_launcher.cpp
+        cpp/launcher/launcher_window.cpp
+        cpp/launcher/asset_mod_builder.cpp
+    )
+
+    target_include_directories(llk2-launcher PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/cpp
+    )
+
+    target_link_libraries(llk2-launcher PRIVATE
+        llk2_media
+        Qt6::Core
+        Qt6::Gui
+        Qt6::Widgets
+    )
+
+    if(MSVC)
+        target_compile_options(llk2-launcher PRIVATE /W4 /utf-8)
+    else()
+        target_compile_options(llk2-launcher PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+
+    llk2_copy_bundled_soundfont(llk2-launcher)
+endif()
+
 # ── Unit Tests (CTest) ───────────────────────────────────────────────────────
 if(LLK2_BUILD_TESTS)
     enable_testing()
@@ -366,5 +399,25 @@ if(LLK2_BUILD_TESTS)
             LLK2_BUI_BINARY="$<TARGET_FILE:llk2-bui>"
         )
         add_test(NAME test_bui_ui COMMAND test_bui_ui)
+    endif()
+
+    if(LLK2_LAUNCHER)
+        add_executable(test_launcher_ui
+            tests/test_launcher_ui.cpp
+            cpp/launcher/asset_mod_builder.cpp
+        )
+        target_include_directories(test_launcher_ui PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/cpp
+        )
+        target_link_libraries(test_launcher_ui PRIVATE
+            llk2_media
+            Qt6::Core
+            Qt6::Gui
+        )
+        target_compile_definitions(test_launcher_ui PRIVATE
+            LLK2_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+            LLK2_LAUNCHER_BINARY="$<TARGET_FILE:llk2-launcher>"
+        )
+        add_test(NAME test_launcher_ui COMMAND test_launcher_ui)
     endif()
 endif()

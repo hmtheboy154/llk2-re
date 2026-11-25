@@ -188,7 +188,11 @@ static void test_renderer_and_audio_with_assets(const std::filesystem::path& ass
         "inspector.hint_hidden", "inspector.highlight_hint",
         "about.credits.original", "about.credits.sc_trans", "about.credits.remaster",
         "msg.stage_clear.body", "msg.endless_clear.body", "msg.endless_clear_notime.body",
-        "msg.timeout_unlim_shuffle.body", "msg.all_clear.body"
+        "msg.timeout_unlim_shuffle.body", "msg.all_clear.body",
+        "launcher.title", "launcher.tab.play", "launcher.tab.assets", "launcher.tab.settings",
+        "launcher.tab.scores", "launcher.tab.diagnostics", "launcher.play.btn_launch",
+        "launcher.assets.btn_extract", "launcher.assets.btn_check_pack",
+        "launcher.diag.mode_user", "launcher.diag.mode_portable"
     };
     for (const char* lang : {"zh-TW", "zh-CN", "en", "vi"}) {
         assert(i18n.set_language(lang));
