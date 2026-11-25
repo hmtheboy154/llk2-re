@@ -1,3 +1,4 @@
+#include "core/app_paths.hpp"
 #include "core/config.hpp"
 #include "core/hst_score.hpp"
 #include "core/i18n.hpp"
@@ -12,7 +13,7 @@
 #include <string>
 
 int main(int argc, char* argv[]) {
-    std::filesystem::path work_dir = std::filesystem::current_path();
+    std::filesystem::path custom_data_dir;
     std::filesystem::path custom_assets_dir;
     std::filesystem::path screenshot_path;
     std::filesystem::path inspector_screenshot_path;
@@ -23,7 +24,9 @@ int main(int argc, char* argv[]) {
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        if (arg == "--assets" && i + 1 < argc) {
+        if (arg == "--data-dir" && i + 1 < argc) {
+            custom_data_dir = argv[++i];
+        } else if (arg == "--assets" && i + 1 < argc) {
             custom_assets_dir = argv[++i];
         } else if (arg == "--smoke-test") {
             smoke_test = true;
@@ -40,21 +43,27 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    auto paths = llk2::core::AppPaths::resolve(argc > 0 ? argv[0] : nullptr, custom_data_dir);
+    std::filesystem::path work_dir = paths.data_dir;
+
     llk2::core::Config config;
-    config.load(work_dir / "config.json");
+    config.load(paths.config_file());
 
     if (!forced_lang.empty()) {
         config.language = forced_lang;
     }
     llk2::core::I18n i18n;
-    if (std::filesystem::exists(work_dir / "locales")) {
-        i18n.load_locales_dir(work_dir / "locales");
+    if (auto bundled_loc = paths.find_resource("locales"); !bundled_loc.empty()) {
+        i18n.load_locales_dir(bundled_loc);
+    }
+    if (std::filesystem::exists(paths.locales_dir())) {
+        i18n.load_locales_dir(paths.locales_dir());
     }
     i18n.set_language(config.language);
 
     llk2::core::HighScoreTable scores;
-    if (!scores.load_json(work_dir / "scores.json")) {
-        if (!scores.load_legacy_hst(work_dir / "d4s.hst")) {
+    if (!scores.load_json(paths.scores_file())) {
+        if (!scores.load_legacy_hst(paths.legacy_hst_file())) {
             scores.reset_empty();
         }
     }
@@ -66,6 +75,11 @@ int main(int argc, char* argv[]) {
         assets_ok = assets.load_from_dir(custom_assets_dir, &err);
     } else {
         assets_ok = assets.auto_load(work_dir, &err);
+        if (!assets_ok) {
+            if (auto res_assets = paths.find_resource("assets"); !res_assets.empty()) {
+                assets_ok = assets.load_from_dir(res_assets, &err);
+            }
+        }
     }
 
     if (!assets_ok) {

@@ -1,3 +1,4 @@
+#include "core/app_paths.hpp"
 #include "core/config.hpp"
 #include "core/game_state.hpp"
 #include "core/hst_score.hpp"
@@ -6,6 +7,7 @@
 #undef NDEBUG
 #include <cassert>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 
 using namespace llk2::core;
@@ -405,12 +407,52 @@ static void test_endless_mode_and_fullscreen_config() {
     assert(!gs.unlimited_shuffle());
 }
 
+static void test_app_paths() {
+    auto def_user = AppPaths::default_user_data_dir();
+    assert(!def_user.empty());
+    assert(def_user.filename() == "llk2");
+
+    auto tmp_override = std::filesystem::temp_directory_path() / "llk2_test_custom_data_dir";
+    std::filesystem::remove_all(tmp_override);
+
+    auto p_cli = AppPaths::resolve(nullptr, tmp_override);
+    assert(p_cli.mode == StorageMode::CustomOverride);
+    assert(p_cli.data_dir == std::filesystem::absolute(tmp_override));
+    assert(p_cli.ensure_data_dir());
+    assert(std::filesystem::is_directory(p_cli.data_dir));
+    assert(p_cli.config_file() == p_cli.data_dir / "config.json");
+    assert(p_cli.scores_file() == p_cli.data_dir / "scores.json");
+    assert(p_cli.assets_dir() == p_cli.data_dir / "assets");
+    assert(p_cli.mods_dir() == p_cli.data_dir / "mods");
+
+    // Verify Config & HighScoreTable auto-create parent directories on save
+    auto nested_cfg = tmp_override / "sub" / "config.json";
+    auto nested_scores = tmp_override / "sub" / "scores.json";
+    Config cfg;
+    cfg.player_name = "Tester";
+    assert(cfg.save(nested_cfg));
+    assert(std::filesystem::is_regular_file(nested_cfg));
+
+    HighScoreTable hs;
+    hs.reset_empty();
+    hs.insert_score("Tester", 1234.0f);
+    assert(hs.save_json(nested_scores));
+    assert(std::filesystem::is_regular_file(nested_scores));
+
+    // Verify bundled resource lookup locates extract_assets.py in source tree
+    auto extractor = p_cli.find_resource(std::filesystem::path("tools") / "extract_assets.py");
+    assert(!extractor.empty() && std::filesystem::is_regular_file(extractor));
+
+    std::filesystem::remove_all(tmp_override);
+}
+
 int main() {
     test_scramble_roundtrip();
     test_hst_and_json_persistence();
     test_config_and_i18n();
     test_gamestate_progression();
     test_endless_mode_and_fullscreen_config();
+    test_app_paths();
     std::printf("[PASS] test_scoring_hst\n");
     return 0;
 }

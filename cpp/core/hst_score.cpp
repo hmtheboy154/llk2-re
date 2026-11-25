@@ -117,6 +117,10 @@ bool HighScoreTable::load_legacy_hst(const std::filesystem::path& path) {
 }
 
 bool HighScoreTable::save_legacy_hst(const std::filesystem::path& path) const {
+    if (path.has_parent_path()) {
+        std::error_code ec;
+        std::filesystem::create_directories(path.parent_path(), ec);
+    }
     std::ofstream f(path, std::ios::binary | std::ios::trunc);
     if (!f) {
         return false;
@@ -153,6 +157,10 @@ static std::string json_escape(std::string_view s) {
 }
 
 bool HighScoreTable::save_json(const std::filesystem::path& path) const {
+    if (path.has_parent_path()) {
+        std::error_code ec;
+        std::filesystem::create_directories(path.parent_path(), ec);
+    }
     std::ofstream f(path, std::ios::binary | std::ios::trunc);
     if (!f) {
         return false;

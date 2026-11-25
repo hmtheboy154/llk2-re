@@ -29,7 +29,8 @@ int main() {
     std::filesystem::create_directories(tmp_work);
 
     std::string cmd = "cd \"" + tmp_work.string() + "\" && SDL_AUDIODRIVER=dummy \"" +
-                      bui_bin.string() + "\" --assets \"" + assets_dir.string() + "\" --smoke-test";
+                      bui_bin.string() + "\" --data-dir \"" + tmp_work.string() +
+                      "\" --assets \"" + assets_dir.string() + "\" --smoke-test";
     int rc = std::system(cmd.c_str());
 
     if (created_temp) {

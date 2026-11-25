@@ -1,5 +1,7 @@
-# Extracted game assets (do not upload copyrighted originals)
+# Extracted game assets & user mod packs (do not upload copyrighted originals)
 assets/
+mods/
+portable.txt
 
 # CMake & C++ build directories / artifacts
 build/

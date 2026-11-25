@@ -30,7 +30,8 @@ int main() {
     std::filesystem::create_directories(tmp_work);
 
     std::string cmd = "cd \"" + tmp_work.string() + "\" && QT_QPA_PLATFORM=offscreen SDL_AUDIODRIVER=dummy \"" +
-                      qt_bin.string() + "\" --assets \"" + assets_dir.string() + "\" --smoke-test";
+                      qt_bin.string() + "\" --data-dir \"" + tmp_work.string() +
+                      "\" --assets \"" + assets_dir.string() + "\" --smoke-test";
     int rc = std::system(cmd.c_str());
 
     if (created_temp) {

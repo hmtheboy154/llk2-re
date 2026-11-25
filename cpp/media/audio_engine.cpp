@@ -1,4 +1,5 @@
 #include "media/audio_engine.hpp"
+#include "core/app_paths.hpp"
 
 #define TSF_IMPLEMENTATION
 #include "tsf.h"
@@ -111,7 +112,7 @@ std::filesystem::path AudioEngine::discover_soundfont_path(const std::string& co
         return configured_path;
     }
 
-    // 2. Bundled GeneralUser-GS SoundFont inside app / build / assets directory (never scans user drive)
+    // 2. Bundled GeneralUser-GS SoundFont inside app / build / install / data directories (never scans user drive)
     std::vector<std::filesystem::path> candidates = {
         "soundfont.sf2",
         "GeneralUser-GS.sf2",
@@ -120,6 +121,15 @@ std::filesystem::path AudioEngine::discover_soundfont_path(const std::string& co
         "subprojects/GeneralUser-GS/GeneralUser-GS.sf2",
         "build/soundfont.sf2",
     };
+
+    for (const auto& dir : core::AppPaths::bundled_resource_dirs()) {
+        candidates.push_back(dir / "soundfont.sf2");
+        candidates.push_back(dir / "GeneralUser-GS.sf2");
+        candidates.push_back(dir / "assets" / "soundfont.sf2");
+    }
+    auto user_dir = core::AppPaths::default_user_data_dir();
+    candidates.push_back(user_dir / "soundfont.sf2");
+    candidates.push_back(user_dir / "GeneralUser-GS.sf2");
 
 #if defined(LLK2_BUNDLED_SOUNDFONT)
     candidates.emplace_back(LLK2_BUNDLED_SOUNDFONT);

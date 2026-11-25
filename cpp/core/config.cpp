@@ -54,6 +54,10 @@ static std::string escape_json_str(const std::string& s) {
 }
 
 bool Config::save(const std::filesystem::path& path) const {
+    if (path.has_parent_path()) {
+        std::error_code ec;
+        std::filesystem::create_directories(path.parent_path(), ec);
+    }
     std::ofstream f(path, std::ios::binary | std::ios::trunc);
     if (!f) {
         return false;

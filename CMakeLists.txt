@@ -58,6 +58,7 @@ add_custom_command(
 )
 
 add_library(llk2_core STATIC
+    cpp/core/app_paths.cpp
     cpp/core/board.cpp
     cpp/core/hst_score.cpp
     cpp/core/config.cpp
@@ -71,6 +72,9 @@ target_include_directories(llk2_core PUBLIC
 )
 target_include_directories(llk2_core PRIVATE
     "${LLK2_GENERATED_DIR}"
+)
+target_compile_definitions(llk2_core PRIVATE
+    LLK2_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
 )
 
 if(MSVC)
