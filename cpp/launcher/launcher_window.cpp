@@ -13,10 +13,12 @@
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QIcon>
 #include <QInputDialog>
 #include <QMessageBox>
 #include <QMimeData>
 #include <QPixmap>
+#include <QProcessEnvironment>
 #include <QStandardPaths>
 #include <QStatusBar>
 #include <QUrl>
@@ -680,6 +682,10 @@ void LauncherWindow::retranslate_ui() {
 }
 
 void LauncherWindow::refresh_all() {
+    if (auto ico = paths_.assets_dir() / "icons" / "Form_Main_Icon.ico";
+        std::filesystem::is_regular_file(ico)) {
+        setWindowIcon(QIcon(QString::fromStdString(ico.string())));
+    }
     refresh_frontends();
     refresh_packs();
     refresh_play_preview();
@@ -856,13 +862,39 @@ void LauncherWindow::on_launch_game() {
         return;
     }
 
+    paths_.ensure_data_dir();
+
     QStringList args;
     args << "--data-dir" << QString::fromStdString(paths_.data_dir.string());
     args << "--assets" << QString::fromStdString(pack_dir.string());
 
-    bool ok = QProcess::startDetached(QString::fromStdString(bin.string()),
-                                      args,
-                                      QString::fromStdString(paths_.data_dir.string()));
+    const QString bin_str = QString::fromStdString(bin.string());
+    const QString work_str = QString::fromStdString(paths_.data_dir.string());
+
+    // Inside a Linux AppImage, keep the AppImage FUSE mount alive while the child game runs
+    // when "Close launcher when game starts" is ticked: hide the launcher and exit once the game closes.
+    const bool in_appimage = !qEnvironmentVariableIsEmpty("APPDIR");
+    if (in_appimage && chk_close_on_launch_->isChecked()) {
+        auto* child = new QProcess(this);
+        child->setWorkingDirectory(work_str);
+        connect(child, &QProcess::finished, this, [child](int, QProcess::ExitStatus) {
+            child->deleteLater();
+            qApp->quit();
+        });
+        connect(child, &QProcess::errorOccurred, this, [this, child, bin](QProcess::ProcessError) {
+            show();
+            QMessageBox::critical(this, qtr("launcher.title"),
+                                  QString::fromStdString(i18n_.format("launcher.play.launch_failed", {
+                                      {"exe", bin.string()}
+                                  })));
+            child->deleteLater();
+        });
+        hide();
+        child->start(bin_str, args);
+        return;
+    }
+
+    bool ok = QProcess::startDetached(bin_str, args, work_str);
     if (!ok) {
         QMessageBox::critical(this, qtr("launcher.title"),
                               QString::fromStdString(i18n_.format("launcher.play.launch_failed", {
@@ -948,13 +980,45 @@ void LauncherWindow::on_browse_exe() {
 }
 
 std::string LauncherWindow::find_python_executable() const {
+    std::error_code ec;
+#if defined(_WIN32)
+    // 1. Prefer bundled embeddable Python shipped alongside llk2-launcher.exe
+    if (!paths_.exe_dir.empty()) {
+        auto bundled = paths_.exe_dir / "python" / "python.exe";
+        if (std::filesystem::is_regular_file(bundled, ec)) {
+            return bundled.string();
+        }
+    }
+    if (auto res_py = paths_.find_resource(std::filesystem::path("python") / "python.exe"); !res_py.empty()) {
+        return res_py.string();
+    }
+
+    auto is_store_stub = [](const QString& p) {
+        return p.contains(QStringLiteral("WindowsApps"), Qt::CaseInsensitive);
+    };
+
     for (const char* cand : {"python3", "python", "py"}) {
+        QString found = QStandardPaths::findExecutable(QString::fromLatin1(cand));
+        if (!found.isEmpty() && !is_store_stub(found)) {
+            return found.toStdString();
+        }
+    }
+    return {};
+#else
+    if (!paths_.exe_dir.empty()) {
+        auto bundled = paths_.exe_dir / "python" / "bin" / "python3";
+        if (std::filesystem::is_regular_file(bundled, ec)) {
+            return bundled.string();
+        }
+    }
+    for (const char* cand : {"python3", "python"}) {
         QString found = QStandardPaths::findExecutable(QString::fromLatin1(cand));
         if (!found.isEmpty()) {
             return found.toStdString();
         }
     }
-    return "python3";
+    return {};
+#endif
 }
 
 void LauncherWindow::on_extract_exe() {
@@ -970,6 +1034,12 @@ void LauncherWindow::on_extract_exe() {
         return;
     }
 
+    std::string python_bin = find_python_executable();
+    if (python_bin.empty()) {
+        append_log("[error] Python 3 executable not found. Place bundled python/ next to llk2-launcher or install Python 3.");
+        return;
+    }
+
     if (extract_proc_ && extract_proc_->state() != QProcess::NotRunning) {
         return;
     }
@@ -980,6 +1050,41 @@ void LauncherWindow::on_extract_exe() {
     extract_proc_ = new QProcess(this);
     extract_proc_->setProcessChannelMode(QProcess::MergedChannels);
 
+#if !defined(_WIN32)
+    // Inside a Linux AppImage, prevent host python3 from loading AppImage's bundled shared libraries.
+    QString appdir = qEnvironmentVariable("APPDIR");
+    if (!appdir.isEmpty()) {
+        QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+        if (env.contains(QStringLiteral("APPIMAGE_ORIG_LD_LIBRARY_PATH"))) {
+            QString orig = env.value(QStringLiteral("APPIMAGE_ORIG_LD_LIBRARY_PATH"));
+            if (orig.isEmpty()) {
+                env.remove(QStringLiteral("LD_LIBRARY_PATH"));
+            } else {
+                env.insert(QStringLiteral("LD_LIBRARY_PATH"), orig);
+            }
+        } else if (env.contains(QStringLiteral("LD_LIBRARY_PATH"))) {
+            QStringList kept;
+            for (const QString& seg : env.value(QStringLiteral("LD_LIBRARY_PATH")).split(':', Qt::SkipEmptyParts)) {
+                if (!seg.startsWith(appdir)) {
+                    kept << seg;
+                }
+            }
+            if (kept.isEmpty()) {
+                env.remove(QStringLiteral("LD_LIBRARY_PATH"));
+            } else {
+                env.insert(QStringLiteral("LD_LIBRARY_PATH"), kept.join(':'));
+            }
+        }
+        if (env.value(QStringLiteral("PYTHONHOME")).startsWith(appdir)) {
+            env.remove(QStringLiteral("PYTHONHOME"));
+        }
+        if (env.value(QStringLiteral("PYTHONPATH")).startsWith(appdir)) {
+            env.remove(QStringLiteral("PYTHONPATH"));
+        }
+        extract_proc_->setProcessEnvironment(env);
+    }
+#endif
+
     QStringList args;
     args << QString::fromStdString(script.string())
          << QString::fromStdString(src.string())
@@ -989,7 +1094,7 @@ void LauncherWindow::on_extract_exe() {
     }
 
     btn_extract_->setEnabled(false);
-    append_log("[extract] Running: " + find_python_executable() + " " + script.filename().string() +
+    append_log("[extract] Running: " + python_bin + " " + script.filename().string() +
                " \"" + src.filename().string() + "\" -o \"" + out_assets.string() + "\"");
 
     connect(extract_proc_, &QProcess::readyReadStandardOutput, this, [this]() {
@@ -997,6 +1102,17 @@ void LauncherWindow::on_extract_exe() {
         QString chunk = QString::fromUtf8(extract_proc_->readAllStandardOutput());
         for (const QString& line : chunk.split('\n', Qt::SkipEmptyParts)) {
             append_log(line.trimmed().toStdString());
+        }
+    });
+
+    connect(extract_proc_, &QProcess::errorOccurred, this, [this](QProcess::ProcessError err) {
+        if (err == QProcess::FailedToStart) {
+            btn_extract_->setEnabled(true);
+            append_log("[error] Failed to start Python executable for asset extraction.");
+            if (extract_proc_) {
+                extract_proc_->deleteLater();
+                extract_proc_ = nullptr;
+            }
         }
     });
 
@@ -1014,7 +1130,7 @@ void LauncherWindow::on_extract_exe() {
         }
     });
 
-    extract_proc_->start(QString::fromStdString(find_python_executable()), args);
+    extract_proc_->start(QString::fromStdString(python_bin), args);
 }
 
 void LauncherWindow::on_import_ost() {
@@ -1429,6 +1545,8 @@ void LauncherWindow::refresh_diagnostics() {
 
     auto script = paths_.find_resource(std::filesystem::path("tools") / "extract_assets.py");
     report += "  Extractor script: " + (script.empty() ? "NOT FOUND" : script.string()) + "\n";
+    auto py_bin = find_python_executable();
+    report += "  Python 3:         " + (py_bin.empty() ? "NOT FOUND" : py_bin) + "\n";
 
     report += "\n=== Audio ===\n";
     auto sf2 = media::AudioEngine::discover_soundfont_path(config_.soundfont_path);

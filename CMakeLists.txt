@@ -179,6 +179,9 @@ if(LLK2_UI_QT)
         cpp/ui/qt/image_dialogs.cpp
         cpp/ui/qt/inspector_dialog.cpp
     )
+    if(WIN32)
+        set_target_properties(llk2-qt PROPERTIES WIN32_EXECUTABLE TRUE)
+    endif()
 
     target_include_directories(llk2-qt PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/cpp
@@ -330,6 +333,9 @@ if(LLK2_LAUNCHER)
         cpp/launcher/launcher_window.cpp
         cpp/launcher/asset_mod_builder.cpp
     )
+    if(WIN32)
+        set_target_properties(llk2-launcher PROPERTIES WIN32_EXECUTABLE TRUE)
+    endif()
 
     target_include_directories(llk2-launcher PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/cpp
