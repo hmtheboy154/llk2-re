@@ -90,9 +90,11 @@ static void test_config_and_i18n() {
     assert(cfg.next_enabled_midi_track(100) == 0);
 
     auto cfg_path = std::filesystem::temp_directory_path() / "llk2_test_cfg.json";
+    assert(cfg.controller_rumble == true);
     cfg.language = "zh-CN";
     cfg.midi_backend = MidiBackend::NativeOS;
     cfg.scale_mode = WindowScaleMode::Scale2x;
+    cfg.controller_rumble = false;
     assert(cfg.save(cfg_path));
 
     Config cfg2;
@@ -100,6 +102,7 @@ static void test_config_and_i18n() {
     assert(cfg2.language == "zh-CN");
     assert(cfg2.midi_backend == MidiBackend::NativeOS);
     assert(cfg2.scale_mode == WindowScaleMode::Scale2x);
+    assert(cfg2.controller_rumble == false);
     assert(cfg2.next_enabled_midi_track(100) == 0);
     std::filesystem::remove(cfg_path);
 
@@ -464,6 +467,92 @@ static void test_app_paths() {
     std::filesystem::remove_all(tmp_override);
 }
 
+static void test_keyboard_cursor_navigation() {
+    GameState gs;
+    uint64_t t = 5000;
+    gs.start_new_game(t);
+
+    // Clear board to a sparse layout to test both Stage 1 (same-row/col auto-skip + wrap)
+    // and Stage 2 (nearest-in-direction fallback when no tile shares the row/col).
+    gs.board().clear_all();
+    gs.board().cell(2, 2) = {true, 1, 1};
+    gs.board().cell(8, 2) = {true, 1, 1};
+    gs.board().cell(5, 6) = {true, 2, 2};
+    gs.board().cell(12, 8) = {true, 2, 2};
+    gs.board().set_tiles_left(4);
+
+    assert(!gs.cursor_active());
+
+    // First directional input activates cursor on an occupied tile
+    assert(gs.move_cursor(1, 0));
+    assert(gs.cursor_active());
+    assert(gs.board().cell(gs.cursor_c(), gs.cursor_r()).occupied);
+
+    // Move mouse directly over (2, 2), then switch into cursor mode -> starts from hover (2, 2)
+    gs.on_mouse_move(21.0f + 2 * 40 + 10, 6.0f + 2 * 50 + 10);
+    assert(!gs.cursor_active());
+    assert(gs.hover_c() == 2 && gs.hover_r() == 2);
+
+    // Move right from (2, 2): must auto-skip empty cols 3..7 and land directly on (8, 2)
+    assert(gs.move_cursor(1, 0));
+    assert(gs.cursor_active());
+    assert(gs.cursor_c() == 8 && gs.cursor_r() == 2);
+
+    // Move right again from (8, 2): wraps around row 2 back to (2, 2)
+    assert(gs.move_cursor(1, 0));
+    assert(gs.cursor_c() == 2 && gs.cursor_r() == 2);
+
+    // Move down from (2, 2): no other tile in col 2 -> Stage 2 nearest-in-direction picks (5, 6) over (12, 8)
+    assert(gs.move_cursor(0, 1));
+    assert(gs.cursor_c() == 5 && gs.cursor_r() == 6);
+
+    // Move right from (5, 6): no other tile in row 6 -> Stage 2 nearest-in-direction picks (8, 2) or (12, 8), both strictly to the right
+    assert(gs.move_cursor(1, 0));
+    assert(gs.cursor_c() > 5);
+
+    // Scan-order jump (+1 / -1) cycles across all 4 occupied tiles deterministically
+    gs.on_mouse_move(21.0f + 2 * 40 + 25.0f, 6.0f + 2 * 50 + 25.0f);
+    assert(!gs.cursor_active());
+    assert(gs.jump_cursor_tile(1));
+    assert(gs.cursor_c() == 8 && gs.cursor_r() == 2);
+    assert(gs.jump_cursor_tile(1));
+    assert(gs.cursor_c() == 5 && gs.cursor_r() == 6);
+    assert(gs.jump_cursor_tile(1));
+    assert(gs.cursor_c() == 12 && gs.cursor_r() == 8);
+    assert(gs.jump_cursor_tile(1));
+    assert(gs.cursor_c() == 2 && gs.cursor_r() == 2);
+    assert(gs.jump_cursor_tile(-1));
+    assert(gs.cursor_c() == 12 && gs.cursor_r() == 8);
+
+    // Select (2, 2), cancel selection, re-select (2, 2), jump to (8, 2), and match via activate_cursor()
+    assert(gs.jump_cursor_tile(1));
+    assert(gs.cursor_c() == 2 && gs.cursor_r() == 2);
+    gs.activate_cursor(t += 10);
+    assert(gs.sel1_c() == 2 && gs.sel1_r() == 2);
+    gs.cancel_selection();
+    assert(gs.sel1_c() == -1 && gs.sel1_r() == -1);
+    gs.activate_cursor(t += 10);
+    assert(gs.move_cursor(1, 0));
+    assert(gs.cursor_c() == 8 && gs.cursor_r() == 2);
+    gs.activate_cursor(t += 10);
+    assert(gs.animating_link());
+
+    // After 200ms link flash completes and removes (2, 2) & (8, 2), cursor snaps to a remaining tile!
+    gs.tick(t += 250);
+    assert(!gs.animating_link());
+    assert(gs.board().tiles_left() == 2);
+    assert(gs.cursor_active());
+    assert(gs.board().cell(gs.cursor_c(), gs.cursor_r()).occupied);
+    assert((gs.cursor_c() == 5 && gs.cursor_r() == 6) || (gs.cursor_c() == 12 && gs.cursor_r() == 8));
+
+    // Tiny sub-pixel mouse jitter must NOT drop cursor mode, while genuine mouse motion switches back cleanly
+    gs.on_mouse_move(21.0f + 2 * 40 + 25.2f, 6.0f + 2 * 50 + 25.1f);
+    assert(gs.cursor_active());
+    gs.on_mouse_move(21.0f + 5 * 40 + 10.0f, 6.0f + 6 * 50 + 10.0f);
+    assert(!gs.cursor_active());
+    assert(gs.hover_c() == 5 && gs.hover_r() == 6);
+}
+
 int main() {
     test_scramble_roundtrip();
     test_hst_and_json_persistence();
@@ -471,6 +560,7 @@ int main() {
     test_gamestate_progression();
     test_endless_mode_and_fullscreen_config();
     test_app_paths();
+    test_keyboard_cursor_navigation();
     std::printf("[PASS] test_scoring_hst\n");
     return 0;
 }

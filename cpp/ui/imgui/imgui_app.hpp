@@ -7,6 +7,7 @@
 #include "media/asset_manager.hpp"
 #include "media/audio_engine.hpp"
 #include "media/board_renderer.hpp"
+#include "media/gamepad_input.hpp"
 #include "media/sdl_compat.hpp"
 
 #include <cstdint>
@@ -50,6 +51,7 @@ public:
     void set_scale_mode(core::WindowScaleMode mode);
     void set_scale_filter(core::ScaleFilter filter);
     void set_borderless_fullscreen(bool enabled);
+    void set_controller_rumble(bool enabled);
     void set_midi_backend(core::MidiBackend backend);
     void set_midi_track_enabled(int track_id, bool enabled);
 
@@ -122,6 +124,7 @@ private:
 
     core::GameState game_state_;
     media::BoardRenderer renderer_;
+    media::GamepadInput gamepad_;
 
     SDL_Window* window_ = nullptr;
     SDL_Renderer* sdl_renderer_ = nullptr;
@@ -168,6 +171,9 @@ private:
     // Optional F12 Inspector / Hint assistant
     bool show_inspector_ = false;
     bool show_hint_overlay_ = false;
+    bool menu_or_popup_open_ = false;
+    bool gamepad_accept_modal_ = false;
+    bool gamepad_cancel_modal_ = false;
 
     // Async SDL3 file dialog handoff queue
     std::mutex file_choice_mutex_;

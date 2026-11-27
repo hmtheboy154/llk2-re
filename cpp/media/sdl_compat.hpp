@@ -23,6 +23,16 @@ inline bool sdl_init_audio() {
 #endif
 }
 
+inline bool sdl_init_gamepad() {
+#if defined(LLK2_USE_SDL3)
+    if (SDL_WasInit(SDL_INIT_GAMEPAD) & SDL_INIT_GAMEPAD) return true;
+    return SDL_InitSubSystem(SDL_INIT_GAMEPAD);
+#else
+    if (SDL_WasInit(SDL_INIT_GAMECONTROLLER) & SDL_INIT_GAMECONTROLLER) return true;
+    return SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER) == 0;
+#endif
+}
+
 inline uint64_t sdl_ticks_ms() {
     return static_cast<uint64_t>(SDL_GetTicks());
 }

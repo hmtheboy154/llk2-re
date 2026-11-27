@@ -308,6 +308,25 @@ void BuiApp::build_ui_tree() {
     BK_bind(ctx_, "F11", reinterpret_cast<void*>(static_cast<uintptr_t>(MenuAction::ToggleFullscreen)));
     BK_bind(ctx_, "alt+Return", reinterpret_cast<void*>(static_cast<uintptr_t>(MenuAction::ToggleFullscreen)));
     BK_bind(ctx_, "F12", reinterpret_cast<void*>(static_cast<uintptr_t>(MenuAction::ToggleInspector)));
+
+    // Keyboard board cursor controls (guarded by active_modal_ == ModalKind::None in on_host_emit)
+    BK_bind(ctx_, "Left", reinterpret_cast<void*>(static_cast<uintptr_t>(MenuAction::CursorLeft)));
+    BK_bind(ctx_, "Right", reinterpret_cast<void*>(static_cast<uintptr_t>(MenuAction::CursorRight)));
+    BK_bind(ctx_, "Up", reinterpret_cast<void*>(static_cast<uintptr_t>(MenuAction::CursorUp)));
+    BK_bind(ctx_, "Down", reinterpret_cast<void*>(static_cast<uintptr_t>(MenuAction::CursorDown)));
+    BK_bind(ctx_, "a", reinterpret_cast<void*>(static_cast<uintptr_t>(MenuAction::CursorLeft)));
+    BK_bind(ctx_, "d", reinterpret_cast<void*>(static_cast<uintptr_t>(MenuAction::CursorRight)));
+    BK_bind(ctx_, "w", reinterpret_cast<void*>(static_cast<uintptr_t>(MenuAction::CursorUp)));
+    BK_bind(ctx_, "s", reinterpret_cast<void*>(static_cast<uintptr_t>(MenuAction::CursorDown)));
+    BK_bind(ctx_, "Tab", reinterpret_cast<void*>(static_cast<uintptr_t>(MenuAction::CursorNextTile)));
+    BK_bind(ctx_, "shift+Tab", reinterpret_cast<void*>(static_cast<uintptr_t>(MenuAction::CursorPrevTile)));
+    BK_bind(ctx_, "shift+ISO_Left_Tab", reinterpret_cast<void*>(static_cast<uintptr_t>(MenuAction::CursorPrevTile)));
+    BK_bind(ctx_, "ISO_Left_Tab", reinterpret_cast<void*>(static_cast<uintptr_t>(MenuAction::CursorPrevTile)));
+    BK_bind(ctx_, "Return", reinterpret_cast<void*>(static_cast<uintptr_t>(MenuAction::CursorConfirm)));
+    BK_bind(ctx_, "KP_Enter", reinterpret_cast<void*>(static_cast<uintptr_t>(MenuAction::CursorConfirm)));
+    BK_bind(ctx_, "space", reinterpret_cast<void*>(static_cast<uintptr_t>(MenuAction::CursorConfirm)));
+    BK_bind(ctx_, "BackSpace", reinterpret_cast<void*>(static_cast<uintptr_t>(MenuAction::CursorCancel)));
+    BK_bind(ctx_, "Escape", reinterpret_cast<void*>(static_cast<uintptr_t>(MenuAction::CursorCancel)));
 }
 
 void BuiApp::build_inspector_tree() {
@@ -346,6 +365,7 @@ void BuiApp::build_inspector_tree() {
     insp_lbl_backend_ = add_line();
     insp_lbl_sf2_ = add_line();
     insp_lbl_track_ = add_line();
+    insp_lbl_controller_ = add_line();
     add_sep();
     insp_lbl_hint_ = add_line();
 
@@ -376,6 +396,7 @@ void BuiApp::build_inspector_tree() {
 }
 
 void BuiApp::destroy_inspector_window() {
+    insp_focused_ = false;
     if (insp_win_) {
         if (BK_window_is_open(insp_win_)) {
             BK_window_close(insp_win_);
@@ -388,8 +409,8 @@ void BuiApp::destroy_inspector_window() {
 void BuiApp::refresh_inspector_ui(bool force) {
     if (!insp_root_) return;
 
-    auto snap = common::build_inspector_snapshot(game_state_, audio_, config_, i18n_, show_hint_overlay_);
-    std::string lines[9] = {
+    auto snap = common::build_inspector_snapshot(game_state_, audio_, config_, i18n_, show_hint_overlay_, gamepad_.active_name());
+    std::string lines[10] = {
         i18n_.tr("inspector.mode") + ": " + snap.mode,
         i18n_.tr("inspector.stage") + ": " + snap.stage,
         i18n_.tr("inspector.tiles_left") + ": " + snap.tiles_left,
@@ -398,15 +419,17 @@ void BuiApp::refresh_inspector_ui(bool force) {
         i18n_.tr("inspector.audio_backend") + ": " + snap.audio_backend,
         i18n_.tr("inspector.soundfont") + ": " + snap.soundfont,
         i18n_.tr("inspector.track") + ": " + snap.track,
+        i18n_.tr("inspector.controller") + ": " + snap.controller,
         i18n_.tr("inspector.next_hint") + ": " + snap.next_hint,
     };
 
-    BKNode* nodes[9] = {
+    BKNode* nodes[10] = {
         insp_lbl_mode_, insp_lbl_stage_, insp_lbl_tiles_, insp_lbl_lives_score_,
-        insp_lbl_time_, insp_lbl_backend_, insp_lbl_sf2_, insp_lbl_track_, insp_lbl_hint_
+        insp_lbl_time_, insp_lbl_backend_, insp_lbl_sf2_, insp_lbl_track_,
+        insp_lbl_controller_, insp_lbl_hint_
     };
 
-    for (int i = 0; i < 9; ++i) {
+    for (int i = 0; i < 10; ++i) {
         if (nodes[i] && (force || last_insp_lines_[i] != lines[i])) {
             last_insp_lines_[i] = lines[i];
             BK_set_str(nodes[i], "text", lines[i].c_str());
@@ -535,6 +558,7 @@ void BuiApp::rebuild_menus() {
     };
 
     std::string s_fs = tr_clean(i18n_, "menu.settings.fullscreen");
+    std::string s_rumble = tr_clean(i18n_, "menu.settings.rumble");
     std::string s_imp = i18n_.tr("menu.settings.import_hst");
     std::string s_exp = i18n_.tr("menu.settings.export_hst");
     std::string s_insp = i18n_.tr("menu.settings.inspector");
@@ -549,6 +573,8 @@ void BuiApp::rebuild_menus() {
         make_submenu(s_scale, scale_sub, 8),
         make_item(s_fs, static_cast<uintptr_t>(MenuAction::ToggleFullscreen),
                   config_.borderless_fullscreen ? 1 : 0, true, "F11"),
+        make_item(s_rumble, static_cast<uintptr_t>(MenuAction::ToggleRumble),
+                  config_.controller_rumble ? 1 : 0, true),
         make_submenu(s_theme, theme_sub, 2),
         make_sep(),
         make_item(s_imp, static_cast<uintptr_t>(MenuAction::ImportHst)),
@@ -641,6 +667,7 @@ void BuiApp::upload_board_texture() {
 bool BuiApp::init(bool headless_mode, std::string* err_out) {
     if (initialized_) return true;
     headless_mode_ = headless_mode;
+    gamepad_.init();
 
     BK_set_theme(current_theme_.c_str());
     setup_ui_fonts();
@@ -673,6 +700,7 @@ bool BuiApp::init(bool headless_mode, std::string* err_out) {
         cb.data = this;
         cb.on_frame = &BuiApp::on_window_frame;
         cb.on_timer = &BuiApp::on_window_timer;
+        cb.on_focus = &BuiApp::on_window_focus;
         cb.on_close = &BuiApp::on_window_close;
         BK_window_set_callbacks(window_, &cb);
         apply_window_scale();
@@ -690,6 +718,7 @@ bool BuiApp::init(bool headless_mode, std::string* err_out) {
 }
 
 void BuiApp::shutdown() {
+    gamepad_.shutdown();
     if (initialized_) {
         save_config_and_scores();
     }
@@ -733,6 +762,7 @@ void BuiApp::shutdown() {
         insp_root_ = nullptr;
         insp_lbl_mode_ = insp_lbl_stage_ = insp_lbl_tiles_ = insp_lbl_lives_score_ = nullptr;
         insp_lbl_time_ = insp_lbl_backend_ = insp_lbl_sf2_ = insp_lbl_track_ = nullptr;
+        insp_lbl_controller_ = nullptr;
         insp_lbl_hint_ = insp_chk_hint_ = insp_btn_close_ = nullptr;
     }
     if (ctx_) {
@@ -876,6 +906,12 @@ void BuiApp::set_borderless_fullscreen(bool enabled) {
     save_config_and_scores();
 }
 
+void BuiApp::set_controller_rumble(bool enabled) {
+    config_.controller_rumble = enabled;
+    rebuild_menus();
+    save_config_and_scores();
+}
+
 void BuiApp::set_midi_backend(core::MidiBackend backend) {
     config_.midi_backend = backend;
     rebuild_menus();
@@ -913,6 +949,7 @@ void BuiApp::set_inspector_visible(bool visible) {
                 if (insp_win_) {
                     BKWindowCallbacks cb{};
                     cb.data = this;
+                    cb.on_focus = &BuiApp::on_inspector_focus;
                     cb.on_close = &BuiApp::on_inspector_close;
                     BK_window_set_callbacks(insp_win_, &cb);
                     BK_window_wm(insp_win_, "minsize", 340, 345);
@@ -963,6 +1000,9 @@ void BuiApp::close_active_modal() {
     clear_modal_content();
     active_modal_ = ModalKind::None;
     records_editable_rank_ = -1;
+    if (ctx_) {
+        BK_focus_node(ctx_, nullptr);
+    }
     if (modal_backdrop_) {
         BK_set_num(modal_backdrop_, "visible", 0);
         BK_node_invalidate(modal_backdrop_);
@@ -1604,6 +1644,7 @@ void BuiApp::process_game_events() {
     for (const auto& ev : events) {
         if (ev.type == core::GameEventType::PlaySfx) {
             audio_.play_sfx(ev.sfx_id);
+            gamepad_.rumble_for_sfx(ev.sfx_id, config_.controller_rumble);
         } else {
             pending_game_modals_.push_back(ev);
             had_modal = true;
@@ -1627,14 +1668,74 @@ void BuiApp::tick_game() {
     int prev_rem = game_state_.remaining_seconds();
     bool prev_anim = game_state_.animating_link();
     int prev_tiles = game_state_.board().tiles_left();
+    int prev_hc = game_state_.hover_c();
+    int prev_hr = game_state_.hover_r();
+    bool prev_cur = game_state_.cursor_active();
+
+    auto ga = gamepad_.poll(now, !headless_mode_ && (window_focused_ || insp_focused_));
+    bool pad_dirty = false;
+    if (ga.any()) {
+        if (ctx_ && BK_popup_count(ctx_) > 0) {
+            if (ga.cancel) {
+                BK_close_popups(ctx_);
+            }
+        } else if (active_modal_ == ModalKind::GameEvent) {
+            if (ga.confirm || ga.cancel) {
+                queue_deferred(DeferredAction::AcceptGameModal);
+            }
+        } else if (active_modal_ == ModalKind::ExplainImage || active_modal_ == ModalKind::AuthorImage) {
+            if (ga.confirm || ga.cancel) {
+                queue_deferred(DeferredAction::CloseModal);
+            }
+        } else if (active_modal_ == ModalKind::Records) {
+            if (ga.confirm || ga.cancel) {
+                queue_deferred(DeferredAction::AcceptRecordsModal);
+            }
+        } else if (active_modal_ == ModalKind::EndlessSetup) {
+            if (ga.cancel) {
+                queue_deferred(DeferredAction::CloseModal);
+            }
+        } else if (active_modal_ == ModalKind::None) {
+            if (ga.toggle_inspector) {
+                queue_deferred(DeferredAction::ToggleInspector);
+            }
+            if (ga.toggle_hint && !game_state_.in_title_screen()) {
+                set_hint_highlight(!show_hint_overlay_);
+            }
+            if (game_state_.in_title_screen()) {
+                if (ga.confirm || ga.start_pressed) {
+                    trigger_new_game();
+                    pad_dirty = true;
+                }
+            } else {
+                if (ga.move_dc != 0 || ga.move_dr != 0) {
+                    if (game_state_.move_cursor(ga.move_dc, ga.move_dr)) pad_dirty = true;
+                }
+                if (ga.jump_dir != 0) {
+                    if (game_state_.jump_cursor_tile(ga.jump_dir)) pad_dirty = true;
+                }
+                if (ga.confirm) {
+                    game_state_.activate_cursor(now);
+                    pad_dirty = true;
+                } else if (ga.cancel) {
+                    game_state_.cancel_selection();
+                    pad_dirty = true;
+                }
+            }
+        }
+    }
 
     game_state_.tick(now);
     audio_.update(config_);
     process_game_events();
 
-    if (game_state_.remaining_seconds() != prev_rem ||
+    if (pad_dirty ||
+        game_state_.remaining_seconds() != prev_rem ||
         game_state_.animating_link() != prev_anim ||
-        game_state_.board().tiles_left() != prev_tiles) {
+        game_state_.board().tiles_left() != prev_tiles ||
+        game_state_.hover_c() != prev_hc ||
+        game_state_.hover_r() != prev_hr ||
+        game_state_.cursor_active() != prev_cur) {
         renderer_.render(game_state_);
         board_dirty_ = true;
         upload_board_texture();
@@ -1761,6 +1862,9 @@ void BuiApp::on_host_emit(void* data, BKNode* node, int kind, void* ref, double 
             case MenuAction::ToggleFullscreen:
                 self->set_borderless_fullscreen(!self->config_.borderless_fullscreen);
                 break;
+            case MenuAction::ToggleRumble:
+                self->set_controller_rumble(!self->config_.controller_rumble);
+                break;
             case MenuAction::ThemeDark:
                 self->set_blender_theme("dark");
                 break;
@@ -1781,6 +1885,61 @@ void BuiApp::on_host_emit(void* data, BKNode* node, int kind, void* ref, double 
                 break;
             case MenuAction::ShowAuthor:
                 self->queue_deferred(DeferredAction::OpenAuthor);
+                break;
+            case MenuAction::CursorLeft:
+            case MenuAction::CursorRight:
+            case MenuAction::CursorUp:
+            case MenuAction::CursorDown:
+            case MenuAction::CursorNextTile:
+            case MenuAction::CursorPrevTile:
+            case MenuAction::CursorConfirm:
+            case MenuAction::CursorCancel:
+                if (self->active_modal_ == ModalKind::None) {
+                    bool moved = false;
+                    uint64_t now = common::now_steady_ms();
+                    if (act == MenuAction::CursorLeft) moved = self->game_state_.move_cursor(-1, 0);
+                    else if (act == MenuAction::CursorRight) moved = self->game_state_.move_cursor(1, 0);
+                    else if (act == MenuAction::CursorUp) moved = self->game_state_.move_cursor(0, -1);
+                    else if (act == MenuAction::CursorDown) moved = self->game_state_.move_cursor(0, 1);
+                    else if (act == MenuAction::CursorNextTile) moved = self->game_state_.jump_cursor_tile(1);
+                    else if (act == MenuAction::CursorPrevTile) moved = self->game_state_.jump_cursor_tile(-1);
+                    else if (act == MenuAction::CursorConfirm) {
+                        if (self->game_state_.in_title_screen()) {
+                            self->trigger_new_game();
+                        } else {
+                            self->game_state_.activate_cursor(now);
+                            self->process_game_events();
+                        }
+                        moved = true;
+                    } else if (act == MenuAction::CursorCancel) {
+                        if (!self->game_state_.in_title_screen()) {
+                            self->game_state_.cancel_selection();
+                            self->process_game_events();
+                            moved = true;
+                        }
+                    }
+                    if (moved) {
+                        self->renderer_.render(self->game_state_);
+                        self->board_dirty_ = true;
+                        self->upload_board_texture();
+                        self->refresh_inspector_ui();
+                    }
+                } else if (act == MenuAction::CursorCancel) {
+                    if (self->active_modal_ == ModalKind::GameEvent) {
+                        self->queue_deferred(DeferredAction::AcceptGameModal);
+                    } else if (self->active_modal_ == ModalKind::Records) {
+                        self->queue_deferred(DeferredAction::AcceptRecordsModal);
+                    } else {
+                        self->queue_deferred(DeferredAction::CloseModal);
+                    }
+                } else if (act == MenuAction::CursorConfirm) {
+                    if (self->active_modal_ == ModalKind::GameEvent) {
+                        self->queue_deferred(DeferredAction::AcceptGameModal);
+                    } else if (self->active_modal_ == ModalKind::ExplainImage ||
+                               self->active_modal_ == ModalKind::AuthorImage) {
+                        self->queue_deferred(DeferredAction::CloseModal);
+                    }
+                }
                 break;
             case MenuAction::LangBase:
             case MenuAction::None:
@@ -1935,16 +2094,29 @@ int BuiApp::on_board_event(void* data, BKNode* /*node*/, const BKCustomEvent* e)
     if (self->active_modal_ != ModalKind::None) return 1;
 
     switch (e->type) {
+        case BK_CUSTOM_FOCUS:
+            // BUI custom nodes automatically grab ctx->focus on mouse press (designed for
+            // embedded text/ImGui canvases), which causes in_BK_key() to return early before
+            // dispatching BK_bind shortcuts. Release focus immediately so keyboard controls
+            // and global shortcuts (Arrows/WASD/Tab/Enter/Esc/F11/F12) keep working after clicks.
+            if (self->ctx_ && BK_focus(self->ctx_) == self->board_node_) {
+                BK_focus_node(self->ctx_, nullptr);
+            }
+            return 1;
+
         case BK_CUSTOM_MOTION: {
             float lx = -1.0f, ly = -1.0f;
             int prev_hc = self->game_state_.hover_c();
             int prev_hr = self->game_state_.hover_r();
+            bool prev_cur = self->game_state_.cursor_active();
             if (self->map_board_local_to_logical(e->x, e->y, lx, ly)) {
                 self->game_state_.on_mouse_move(lx, ly);
-            } else {
+            } else if (!self->game_state_.cursor_active()) {
                 self->game_state_.on_mouse_move(-1.0f, -1.0f);
             }
-            if (self->game_state_.hover_c() != prev_hc || self->game_state_.hover_r() != prev_hr) {
+            if (self->game_state_.hover_c() != prev_hc ||
+                self->game_state_.hover_r() != prev_hr ||
+                self->game_state_.cursor_active() != prev_cur) {
                 self->renderer_.render(self->game_state_);
                 self->board_dirty_ = true;
                 self->upload_board_texture();
@@ -1953,7 +2125,8 @@ int BuiApp::on_board_event(void* data, BKNode* /*node*/, const BKCustomEvent* e)
         }
 
         case BK_CUSTOM_LEAVE:
-            if (self->game_state_.hover_c() != -1 || self->game_state_.hover_r() != -1) {
+            if (!self->game_state_.cursor_active() &&
+                (self->game_state_.hover_c() != -1 || self->game_state_.hover_r() != -1)) {
                 self->game_state_.on_mouse_move(-1.0f, -1.0f);
                 self->renderer_.render(self->game_state_);
                 self->board_dirty_ = true;
@@ -1962,6 +2135,9 @@ int BuiApp::on_board_event(void* data, BKNode* /*node*/, const BKCustomEvent* e)
             return 1;
 
         case BK_CUSTOM_PRESS: {
+            if (self->ctx_ && BK_focus(self->ctx_) == self->board_node_) {
+                BK_focus_node(self->ctx_, nullptr);
+            }
             float lx = -1.0f, ly = -1.0f;
             if (!self->map_board_local_to_logical(e->x, e->y, lx, ly)) return 1;
 
@@ -2277,8 +2453,17 @@ void BuiApp::on_window_timer(void* data, BKWindow* win, int id) {
     self->tick_game();
 
     if (win && BK_window_is_open(win)) {
-        int next_ms = (!self->game_state_.in_title_screen() || self->game_state_.animating_link()) ? 16 : 50;
+        int next_ms = (!self->game_state_.in_title_screen() ||
+                       self->game_state_.animating_link() ||
+                       self->gamepad_.connected()) ? 16 : 50;
         self->tick_timer_id_ = BK_window_timer(win, next_ms);
+    }
+}
+
+void BuiApp::on_window_focus(void* data, BKWindow* /*win*/, int active) {
+    auto* self = static_cast<BuiApp*>(data);
+    if (self) {
+        self->window_focused_ = (active != 0);
     }
 }
 
@@ -2292,9 +2477,17 @@ int BuiApp::on_window_close(void* data, BKWindow* /*win*/) {
     return 1; // allow window close
 }
 
+void BuiApp::on_inspector_focus(void* data, BKWindow* /*win*/, int active) {
+    auto* self = static_cast<BuiApp*>(data);
+    if (self) {
+        self->insp_focused_ = (active != 0);
+    }
+}
+
 int BuiApp::on_inspector_close(void* data, BKWindow* /*win*/) {
     auto* self = static_cast<BuiApp*>(data);
     if (self) {
+        self->insp_focused_ = false;
         self->show_inspector_ = false;
         self->rebuild_menus();
         self->queue_deferred(DeferredAction::CloseInspector);
@@ -2307,6 +2500,20 @@ void BuiApp::simulate_click(int x, int y) {
     BK_motion(ctx_, x, y, 0);
     BK_press(ctx_, x, y, 0);
     BK_release(ctx_, x, y, 0);
+    flush_deferred_actions();
+}
+
+void BuiApp::simulate_right_click(int x, int y) {
+    if (!ctx_) return;
+    BK_motion(ctx_, x, y, 0);
+    BK_context_menu(ctx_, x, y, 0);
+    BK_button(ctx_, x, y, 3, 1, 0);
+    flush_deferred_actions();
+}
+
+void BuiApp::simulate_key(const char* keysym, int mods) {
+    if (!ctx_ || !keysym) return;
+    BK_key(ctx_, "", keysym, mods);
     flush_deferred_actions();
 }
 

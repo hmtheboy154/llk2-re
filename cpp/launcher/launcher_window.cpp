@@ -341,6 +341,9 @@ QWidget* LauncherWindow::build_settings_tab() {
     chk_set_fullscreen_ = new QCheckBox(grp_display_);
     disp_form->addRow("", chk_set_fullscreen_);
 
+    chk_set_rumble_ = new QCheckBox(grp_display_);
+    disp_form->addRow("", chk_set_rumble_);
+
     lbl_set_player_ = new QLabel(grp_display_);
     edit_set_player_ = new QLineEdit(grp_display_);
     disp_form->addRow(lbl_set_player_, edit_set_player_);
@@ -610,6 +613,7 @@ void LauncherWindow::retranslate_ui() {
     lbl_set_scale_->setText(qtr("launcher.settings.scale_mode") + ":");
     lbl_set_filter_->setText(qtr("launcher.settings.scale_filter") + ":");
     chk_set_fullscreen_->setText(qtr_mnem_safe("launcher.settings.fullscreen"));
+    chk_set_rumble_->setText(qtr_mnem_safe("launcher.settings.rumble"));
     lbl_set_player_->setText(qtr("launcher.settings.player_name") + ":");
 
     grp_audio_->setTitle(qtr_mnem_safe("launcher.settings.audio_group"));
@@ -1347,6 +1351,7 @@ void LauncherWindow::refresh_settings_from_config() {
     cmb_set_scale_->setCurrentIndex(std::clamp(static_cast<int>(config_.scale_mode), 0, 4));
     cmb_set_filter_->setCurrentIndex(config_.scale_filter == core::ScaleFilter::Bilinear ? 1 : 0);
     chk_set_fullscreen_->setChecked(config_.borderless_fullscreen);
+    chk_set_rumble_->setChecked(config_.controller_rumble);
     edit_set_player_->setText(QString::fromStdString(config_.player_name));
 
     chk_set_music_->setChecked(config_.music_on);
@@ -1374,6 +1379,7 @@ void LauncherWindow::on_save_settings(bool show_status) {
     config_.scale_filter = (cmb_set_filter_->currentIndex() == 1) ? core::ScaleFilter::Bilinear
                                                                  : core::ScaleFilter::Nearest;
     config_.borderless_fullscreen = chk_set_fullscreen_->isChecked();
+    config_.controller_rumble = chk_set_rumble_->isChecked();
     std::string pname = edit_set_player_->text().trimmed().toStdString();
     config_.player_name = pname.empty() ? "Player" : pname;
 

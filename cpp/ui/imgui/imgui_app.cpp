@@ -186,11 +186,17 @@ bool ImGuiApp::init(bool headless_mode, std::string* err_out) {
     update_texture_filter();
     apply_window_scale();
 
+    if (!headless_mode_) {
+        gamepad_.init();
+    }
+
     initialized_ = true;
     return true;
 }
 
 void ImGuiApp::shutdown() {
+    gamepad_.shutdown();
+
     if (!window_ && !sdl_renderer_ && !ImGui::GetCurrentContext()) {
         return;
     }
@@ -471,6 +477,11 @@ void ImGuiApp::set_borderless_fullscreen(bool enabled) {
     save_config_and_scores();
 }
 
+void ImGuiApp::set_controller_rumble(bool enabled) {
+    config_.controller_rumble = enabled;
+    save_config_and_scores();
+}
+
 void ImGuiApp::set_midi_backend(core::MidiBackend backend) {
     config_.midi_backend = backend;
     audio_.update(config_);
@@ -575,6 +586,7 @@ void ImGuiApp::process_game_events() {
     for (const auto& ev : events) {
         if (ev.type == core::GameEventType::PlaySfx) {
             audio_.play_sfx(ev.sfx_id);
+            gamepad_.rumble_for_sfx(ev.sfx_id, config_.controller_rumble);
         } else {
             pending_modals_.push_back(ev);
             queued_modal = true;
@@ -597,14 +609,65 @@ void ImGuiApp::tick_game() {
     int prev_rem = game_state_.remaining_seconds();
     bool prev_anim = game_state_.animating_link();
     int prev_tiles = game_state_.board().tiles_left();
+    bool prev_cur = game_state_.cursor_active();
+    int prev_cc = game_state_.cursor_c();
+    int prev_cr = game_state_.cursor_r();
+    int prev_s1c = game_state_.sel1_c();
+    int prev_s1r = game_state_.sel1_r();
 
     game_state_.tick(now);
+
+    bool win_focused = false;
+    if (window_ && !headless_mode_) {
+        win_focused = (SDL_GetWindowFlags(window_) & SDL_WINDOW_INPUT_FOCUS) != 0;
+    }
+    const auto ga = gamepad_.poll(now, win_focused);
+    if (ga.any()) {
+        const bool modal_blocking = !pending_modals_.empty() || show_records_modal_ ||
+                                    show_explain_modal_ || show_author_modal_ ||
+                                    show_endless_modal_ || show_path_modal_;
+        if (modal_blocking) {
+            if (ga.confirm) gamepad_accept_modal_ = true;
+            if (ga.cancel) gamepad_cancel_modal_ = true;
+        } else if (!menu_or_popup_open_) {
+            if (ga.toggle_inspector) {
+                show_inspector_ = !show_inspector_;
+            }
+            if (ga.toggle_hint && !game_state_.in_title_screen()) {
+                show_hint_overlay_ = !show_hint_overlay_;
+            }
+            if (game_state_.in_title_screen()) {
+                if (ga.confirm || ga.start_pressed) {
+                    trigger_new_game();
+                }
+            } else {
+                if (ga.move_dc != 0 || ga.move_dr != 0) {
+                    game_state_.move_cursor(ga.move_dc, ga.move_dr);
+                }
+                if (ga.jump_dir != 0) {
+                    game_state_.jump_cursor_tile(ga.jump_dir);
+                }
+                if (ga.confirm) {
+                    game_state_.activate_cursor(now);
+                }
+                if (ga.cancel) {
+                    game_state_.cancel_selection();
+                }
+            }
+        }
+    }
+
     audio_.update(config_);
     process_game_events();
 
     if (game_state_.remaining_seconds() != prev_rem ||
         game_state_.animating_link() != prev_anim ||
-        game_state_.board().tiles_left() != prev_tiles) {
+        game_state_.board().tiles_left() != prev_tiles ||
+        game_state_.cursor_active() != prev_cur ||
+        game_state_.cursor_c() != prev_cc ||
+        game_state_.cursor_r() != prev_cr ||
+        game_state_.sel1_c() != prev_s1c ||
+        game_state_.sel1_r() != prev_s1r) {
         renderer_.render(game_state_);
         board_dirty_ = true;
     }
@@ -622,36 +685,87 @@ void ImGuiApp::handle_sdl_event(const SDL_Event& ev, bool& want_quit) {
                                 show_explain_modal_ || show_author_modal_ ||
                                 show_endless_modal_ || show_path_modal_;
 
+    auto handle_board_scancode = [&](SDL_Scancode sc, bool repeat, bool alt_held, bool ctrl_or_gui, bool shift_held) {
+        if (modal_blocking || menu_or_popup_open_ || io.WantTextInput || alt_held || ctrl_or_gui) {
+            return;
+        }
+        bool changed = false;
+        if (game_state_.in_title_screen()) {
+            if (!repeat && (sc == SDL_SCANCODE_RETURN || sc == SDL_SCANCODE_KP_ENTER || sc == SDL_SCANCODE_SPACE)) {
+                trigger_new_game();
+            }
+            return;
+        }
+        if (sc == SDL_SCANCODE_LEFT || sc == SDL_SCANCODE_A) {
+            changed = game_state_.move_cursor(-1, 0);
+        } else if (sc == SDL_SCANCODE_RIGHT || sc == SDL_SCANCODE_D) {
+            changed = game_state_.move_cursor(1, 0);
+        } else if (sc == SDL_SCANCODE_UP || sc == SDL_SCANCODE_W) {
+            changed = game_state_.move_cursor(0, -1);
+        } else if (sc == SDL_SCANCODE_DOWN || sc == SDL_SCANCODE_S) {
+            changed = game_state_.move_cursor(0, 1);
+        } else if (sc == SDL_SCANCODE_TAB) {
+            changed = game_state_.jump_cursor_tile(shift_held ? -1 : 1);
+        } else if (!repeat && (sc == SDL_SCANCODE_RETURN || sc == SDL_SCANCODE_KP_ENTER || sc == SDL_SCANCODE_SPACE)) {
+            game_state_.activate_cursor(common::now_steady_ms());
+            process_game_events();
+            changed = true;
+        } else if (!repeat && (sc == SDL_SCANCODE_BACKSPACE || sc == SDL_SCANCODE_ESCAPE)) {
+            game_state_.cancel_selection();
+            process_game_events();
+            changed = true;
+        }
+        if (changed) {
+            renderer_.render(game_state_);
+            board_dirty_ = true;
+        }
+    };
+
 #if defined(LLK2_USE_SDL3)
     switch (ev.type) {
         case SDL_EVENT_QUIT:
             want_quit = true;
             break;
 
-        case SDL_EVENT_KEY_DOWN:
+        case SDL_EVENT_KEY_DOWN: {
+            bool handled_global = false;
             if (!ev.key.repeat) {
                 if (ev.key.key == SDLK_F12) {
                     show_inspector_ = !show_inspector_;
+                    handled_global = true;
                 } else if (ev.key.key == SDLK_F11 ||
                            (ev.key.key == SDLK_RETURN && (ev.key.mod & SDL_KMOD_ALT))) {
                     set_borderless_fullscreen(!config_.borderless_fullscreen);
+                    handled_global = true;
                 } else if (ev.key.key == SDLK_F2 && game_state_.in_title_screen() && !modal_blocking) {
                     trigger_new_game();
+                    handled_global = true;
                 }
             }
+            if (!handled_global) {
+                handle_board_scancode(
+                    ev.key.scancode,
+                    ev.key.repeat != 0,
+                    (ev.key.mod & SDL_KMOD_ALT) != 0,
+                    (ev.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_GUI)) != 0,
+                    (ev.key.mod & SDL_KMOD_SHIFT) != 0);
+            }
             break;
+        }
 
         case SDL_EVENT_MOUSE_MOTION:
             if (!modal_blocking && !io.WantCaptureMouse) {
                 float lx = -1.0f, ly = -1.0f;
                 int prev_hc = game_state_.hover_c();
                 int prev_hr = game_state_.hover_r();
+                bool prev_cur = game_state_.cursor_active();
                 if (map_window_to_logical(ev.motion.x, ev.motion.y, lx, ly)) {
                     game_state_.on_mouse_move(lx, ly);
                 } else {
                     game_state_.on_mouse_move(-1.0f, -1.0f);
                 }
-                if (game_state_.hover_c() != prev_hc || game_state_.hover_r() != prev_hr) {
+                if (game_state_.hover_c() != prev_hc || game_state_.hover_r() != prev_hr ||
+                    game_state_.cursor_active() != prev_cur) {
                     renderer_.render(game_state_);
                     board_dirty_ = true;
                 }
@@ -693,30 +807,45 @@ void ImGuiApp::handle_sdl_event(const SDL_Event& ev, bool& want_quit) {
             want_quit = true;
             break;
 
-        case SDL_KEYDOWN:
+        case SDL_KEYDOWN: {
+            bool handled_global = false;
             if (!ev.key.repeat) {
                 if (ev.key.keysym.sym == SDLK_F12) {
                     show_inspector_ = !show_inspector_;
+                    handled_global = true;
                 } else if (ev.key.keysym.sym == SDLK_F11 ||
                            (ev.key.keysym.sym == SDLK_RETURN && (ev.key.keysym.mod & KMOD_ALT))) {
                     set_borderless_fullscreen(!config_.borderless_fullscreen);
+                    handled_global = true;
                 } else if (ev.key.keysym.sym == SDLK_F2 && game_state_.in_title_screen() && !modal_blocking) {
                     trigger_new_game();
+                    handled_global = true;
                 }
             }
+            if (!handled_global) {
+                handle_board_scancode(
+                    ev.key.keysym.scancode,
+                    ev.key.repeat != 0,
+                    (ev.key.keysym.mod & KMOD_ALT) != 0,
+                    (ev.key.keysym.mod & (KMOD_CTRL | KMOD_GUI)) != 0,
+                    (ev.key.keysym.mod & KMOD_SHIFT) != 0);
+            }
             break;
+        }
 
         case SDL_MOUSEMOTION:
             if (!modal_blocking && !io.WantCaptureMouse) {
                 float lx = -1.0f, ly = -1.0f;
                 int prev_hc = game_state_.hover_c();
                 int prev_hr = game_state_.hover_r();
+                bool prev_cur = game_state_.cursor_active();
                 if (map_window_to_logical(static_cast<float>(ev.motion.x), static_cast<float>(ev.motion.y), lx, ly)) {
                     game_state_.on_mouse_move(lx, ly);
                 } else {
                     game_state_.on_mouse_move(-1.0f, -1.0f);
                 }
-                if (game_state_.hover_c() != prev_hc || game_state_.hover_r() != prev_hr) {
+                if (game_state_.hover_c() != prev_hc || game_state_.hover_r() != prev_hr ||
+                    game_state_.cursor_active() != prev_cur) {
                     renderer_.render(game_state_);
                     board_dirty_ = true;
                 }
@@ -995,6 +1124,11 @@ void ImGuiApp::draw_menu_bar() {
             set_borderless_fullscreen(fs);
         }
 
+        bool rumble = config_.controller_rumble;
+        if (ImGui::MenuItem((tr_clean(i18n_, "menu.settings.rumble") + "###act_rumble").c_str(), nullptr, &rumble)) {
+            set_controller_rumble(rumble);
+        }
+
         ImGui::Separator();
 
         if (ImGui::MenuItem((i18n_.tr("menu.settings.import_hst") + "###act_import").c_str())) {
@@ -1092,7 +1226,8 @@ void ImGuiApp::draw_game_event_modal() {
         bool ok = ImGui::Button((i18n_.tr("table.btn.ok") + "###game_modal_ok").c_str(), ImVec2(btn_w, 0)) ||
                   ImGui::IsKeyPressed(ImGuiKey_Enter) ||
                   ImGui::IsKeyPressed(ImGuiKey_KeypadEnter) ||
-                  ImGui::IsKeyPressed(ImGuiKey_Space);
+                  ImGui::IsKeyPressed(ImGuiKey_Space) ||
+                  gamepad_accept_modal_ || gamepad_cancel_modal_;
 
         if (ok) {
             float final_score = ev.total_score;
@@ -1193,7 +1328,8 @@ void ImGuiApp::draw_records_modal() {
         bool accept = ImGui::Button((i18n_.tr("table.btn.ok") + "###records_ok").c_str(), ImVec2(btn_w, 0)) ||
                       ImGui::IsKeyPressed(ImGuiKey_Escape) ||
                       ImGui::IsKeyPressed(ImGuiKey_Enter) ||
-                      ImGui::IsKeyPressed(ImGuiKey_KeypadEnter);
+                      ImGui::IsKeyPressed(ImGuiKey_KeypadEnter) ||
+                      gamepad_accept_modal_ || gamepad_cancel_modal_;
         if (accept || !show_records_modal_) {
             if (records_editable_rank_ >= 0 && records_editable_rank_ < core::HighScoreTable::kCount) {
                 std::string nm = records_name_buf_;
@@ -1315,7 +1451,8 @@ void ImGuiApp::draw_image_modal(const char* popup_id, const std::string& title,
                 ImGui::CloseCurrentPopup();
             }
         }
-        if (ImGui::IsKeyPressed(ImGuiKey_Escape) || ImGui::IsKeyPressed(ImGuiKey_Enter) || !open_flag) {
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape) || ImGui::IsKeyPressed(ImGuiKey_Enter) ||
+            gamepad_accept_modal_ || gamepad_cancel_modal_ || !open_flag) {
             open_flag = false;
             ImGui::CloseCurrentPopup();
         }
@@ -1423,7 +1560,8 @@ void ImGuiApp::draw_about_modal() {
             }
         }
 
-        if (ImGui::IsKeyPressed(ImGuiKey_Escape) || ImGui::IsKeyPressed(ImGuiKey_Enter) || !show_author_modal_) {
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape) || ImGui::IsKeyPressed(ImGuiKey_Enter) ||
+            gamepad_accept_modal_ || gamepad_cancel_modal_ || !show_author_modal_) {
             show_author_modal_ = false;
             ImGui::CloseCurrentPopup();
         }
@@ -1476,7 +1614,8 @@ void ImGuiApp::draw_path_fallback_modal() {
 void ImGuiApp::draw_inspector() {
     if (!show_inspector_) return;
 
-    auto snap = common::build_inspector_snapshot(game_state_, audio_, config_, i18n_, show_hint_overlay_);
+    auto snap = common::build_inspector_snapshot(game_state_, audio_, config_, i18n_, show_hint_overlay_,
+                                                 gamepad_.active_name());
     std::string title = i18n_.tr("inspector.title") + "###llk2_inspector";
 
     ImGui::SetNextWindowSize(ImVec2(330.0f, 0.0f), ImGuiCond_FirstUseEver);
@@ -1490,6 +1629,7 @@ void ImGuiApp::draw_inspector() {
         ImGui::Text("%s: %s", i18n_.tr("inspector.audio_backend").c_str(), snap.audio_backend.c_str());
         ImGui::Text("%s: %s", i18n_.tr("inspector.soundfont").c_str(), snap.soundfont.c_str());
         ImGui::Text("%s: %s", i18n_.tr("inspector.track").c_str(), snap.track.c_str());
+        ImGui::Text("%s: %s", i18n_.tr("inspector.controller").c_str(), snap.controller.c_str());
         ImGui::Separator();
         ImGui::Text("%s: %s", i18n_.tr("inspector.next_hint").c_str(), snap.next_hint.c_str());
         ImGui::Checkbox((i18n_.tr("inspector.highlight_hint") + "###chk_hint").c_str(), &show_hint_overlay_);
@@ -1641,7 +1781,7 @@ void ImGuiApp::draw_endless_modal() {
 
         ImGui::SameLine();
         if (ImGui::Button((i18n_.tr("dialog.endless.btn.cancel") + "###endless_cancel").c_str(), ImVec2(btn_w, 0)) ||
-            ImGui::IsKeyPressed(ImGuiKey_Escape) || !show_endless_modal_) {
+            ImGui::IsKeyPressed(ImGuiKey_Escape) || gamepad_cancel_modal_ || !show_endless_modal_) {
             show_endless_modal_ = false;
             ImGui::CloseCurrentPopup();
         }
@@ -1659,6 +1799,8 @@ void ImGuiApp::draw_modals() {
                      show_explain_modal_, true);
     draw_about_modal();
     draw_path_fallback_modal();
+    gamepad_accept_modal_ = false;
+    gamepad_cancel_modal_ = false;
 }
 
 void ImGuiApp::render_frame() {
@@ -1681,6 +1823,7 @@ void ImGuiApp::render_frame() {
     draw_hint_overlay();
     draw_inspector();
     draw_modals();
+    menu_or_popup_open_ = ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId);
 
     ImGui::Render();
 
@@ -1745,8 +1888,9 @@ int ImGuiApp::run() {
 
     while (!want_quit && !request_quit_) {
         SDL_Event ev;
-        // Event-driven low-CPU wait: 16 ms during active play/animation, 50 ms when idle on title screen.
-        int wait_ms = (!game_state_.in_title_screen() || game_state_.animating_link() || show_inspector_) ? 16 : 50;
+        // Event-driven low-CPU wait: 16 ms during active play/animation/controller, 50 ms when idle on title screen.
+        int wait_ms = (!game_state_.in_title_screen() || game_state_.animating_link() ||
+                       show_inspector_ || gamepad_.connected()) ? 16 : 50;
         if (SDL_WaitEventTimeout(&ev, wait_ms)) {
             handle_sdl_event(ev, want_quit);
             while (SDL_PollEvent(&ev)) {

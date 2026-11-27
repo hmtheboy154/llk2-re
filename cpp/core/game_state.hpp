@@ -70,6 +70,15 @@ public:
     // VB5 slot 37: Pic_Show_MouseMove
     void on_mouse_move(float x, float y);
 
+    // Keyboard & Gamepad cursor navigation (auto-skips empty cells on the 16x9 playable grid)
+    bool move_cursor(int dc, int dr) noexcept;
+    // Jump directly to next (+1) or previous (-1) occupied tile in scan order
+    bool jump_cursor_tile(int dir) noexcept;
+    // Select or match the tile currently under the cursor (same rules as left-click)
+    void activate_cursor(uint64_t now_ms);
+    // Cancel active selection and play SFX 201 if a tile was selected (same as right-click)
+    void cancel_selection();
+
     // VB5 slot 19: GameLoop 30ms tick body
     void tick(uint64_t now_ms);
 
@@ -107,6 +116,9 @@ public:
     int sel2_r() const noexcept { return sel2_r_; }
     int hover_c() const noexcept { return hover_c_; }
     int hover_r() const noexcept { return hover_r_; }
+    bool cursor_active() const noexcept { return cursor_active_; }
+    int cursor_c() const noexcept { return cursor_c_; }
+    int cursor_r() const noexcept { return cursor_r_; }
 
     const LinkPath& active_link_path() const noexcept { return active_link_path_; }
 
@@ -117,10 +129,12 @@ private:
     void refill_endless_queue();
     int pop_next_endless_level();
     int peek_next_endless_level();
+    void select_tile_at(int col, int row, uint64_t now_ms);
     void process_selection(uint64_t now_ms);
     // Returns true if completing the pair triggered a deadlock shuffle.
     bool complete_matched_pair(uint64_t now_ms);
     void update_hover_from_last_mouse() noexcept;
+    bool snap_cursor_to_nearest_occupied(int pref_c, int pref_r) noexcept;
 
     Vb5Rng rng_;
     Board board_;
@@ -161,6 +175,9 @@ private:
     int sel2_r_ = -1;
     int hover_c_ = -1;
     int hover_r_ = -1;
+    bool cursor_active_ = false;
+    int cursor_c_ = -1;
+    int cursor_r_ = -1;
     float last_mouse_x_ = -1.0f;
     float last_mouse_y_ = -1.0f;
 

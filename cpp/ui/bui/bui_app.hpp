@@ -7,6 +7,7 @@
 #include "media/asset_manager.hpp"
 #include "media/audio_engine.hpp"
 #include "media/board_renderer.hpp"
+#include "media/gamepad_input.hpp"
 #include "ui/common/ui_helpers.hpp"
 
 #include "BUI_kit.h"
@@ -43,8 +44,10 @@ public:
     bool render_headless_frame(const std::filesystem::path& screenshot_png = {});
     bool render_inspector_headless_frame(const std::filesystem::path& screenshot_png = {});
 
-    // Simulates a left-button click or menu action inside the main context (for smoke-test coverage).
+    // Simulates a left/right click, key press, or menu action inside the main context (for smoke-test coverage).
     void simulate_click(int x, int y);
+    void simulate_right_click(int x, int y);
+    void simulate_key(const char* keysym, int mods = 0);
     void simulate_language_menu_pick(size_t lang_index);
 
     // Programmatic actions (shared by menus and smoke test)
@@ -55,6 +58,7 @@ public:
     void set_scale_mode(core::WindowScaleMode mode);
     void set_scale_filter(core::ScaleFilter filter);
     void set_borderless_fullscreen(bool enabled);
+    void set_controller_rumble(bool enabled);
     void set_midi_backend(core::MidiBackend backend);
     void set_midi_track_enabled(int track_id, bool enabled);
     void set_blender_theme(const std::string& theme_name);
@@ -100,6 +104,7 @@ private:
         FilterNearest,
         FilterBilinear,
         ToggleFullscreen,
+        ToggleRumble,
         ThemeDark,
         ThemeLight,
         ImportHst,
@@ -107,6 +112,14 @@ private:
         ToggleInspector,
         ShowExplain,
         ShowAuthor,
+        CursorLeft,
+        CursorRight,
+        CursorUp,
+        CursorDown,
+        CursorNextTile,
+        CursorPrevTile,
+        CursorConfirm,
+        CursorCancel,
         LangBase = 1000
     };
 
@@ -178,7 +191,9 @@ private:
     static void on_author_draw(void* data, BKNode* node, BuiRaster* r, const int rect[4]);
     static void on_window_frame(void* data, BKWindow* win);
     static void on_window_timer(void* data, BKWindow* win, int id);
+    static void on_window_focus(void* data, BKWindow* win, int active);
     static int on_window_close(void* data, BKWindow* win);
+    static void on_inspector_focus(void* data, BKWindow* win, int active);
     static int on_inspector_close(void* data, BKWindow* win);
 
     media::AssetManager& assets_;
@@ -190,9 +205,12 @@ private:
 
     core::GameState game_state_;
     media::BoardRenderer renderer_;
+    media::GamepadInput gamepad_;
 
     bool initialized_ = false;
     bool headless_mode_ = false;
+    bool window_focused_ = true;
+    bool insp_focused_ = false;
     bool cjk_font_loaded_ = false;
     bool latin_font_loaded_ = false;
     std::string current_theme_ = "dark";
@@ -240,13 +258,14 @@ private:
     BKNode* insp_lbl_backend_ = nullptr;
     BKNode* insp_lbl_sf2_ = nullptr;
     BKNode* insp_lbl_track_ = nullptr;
+    BKNode* insp_lbl_controller_ = nullptr;
     BKNode* insp_lbl_hint_ = nullptr;
     BKNode* insp_chk_hint_ = nullptr;
     BKNode* insp_btn_close_ = nullptr;
     BKContext* insp_ctx_ = nullptr;
     BKWindow* insp_win_ = nullptr;
     BuiRaster* insp_headless_raster_ = nullptr;
-    std::string last_insp_lines_[9];
+    std::string last_insp_lines_[10];
 
     int board_tex_ = 0;
     int explain_tex_ = 0;

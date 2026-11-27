@@ -188,6 +188,7 @@ private:
     QLabel* lbl_set_filter_ = nullptr;
     QComboBox* cmb_set_filter_ = nullptr;
     QCheckBox* chk_set_fullscreen_ = nullptr;
+    QCheckBox* chk_set_rumble_ = nullptr;
     QLabel* lbl_set_player_ = nullptr;
     QLineEdit* edit_set_player_ = nullptr;
 

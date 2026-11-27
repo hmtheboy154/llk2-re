@@ -61,10 +61,13 @@ InspectorDialog::InspectorDialog(const core::I18n& i18n, QWidget* parent)
     val_sf2_ = new QLabel(this);
     key_track_ = new QLabel(this);
     val_track_ = new QLabel(this);
+    key_controller_ = new QLabel(this);
+    val_controller_ = new QLabel(this);
 
     audio_form->addRow(key_backend_, val_backend_);
     audio_form->addRow(key_sf2_, val_sf2_);
     audio_form->addRow(key_track_, val_track_);
+    audio_form->addRow(key_controller_, val_controller_);
     main_layout->addLayout(audio_form);
 
     main_layout->addWidget(make_sep());
@@ -114,6 +117,7 @@ void InspectorDialog::retranslate() {
     key_backend_->setText(qtr("inspector.audio_backend") + ":");
     key_sf2_->setText(qtr("inspector.soundfont") + ":");
     key_track_->setText(qtr("inspector.track") + ":");
+    key_controller_->setText(qtr("inspector.controller") + ":");
     key_hint_->setText(qtr("inspector.next_hint") + ":");
     chk_hint_->setText(qtr("inspector.highlight_hint"));
     btn_close_->setText(qtr("dialog.btn.close"));
@@ -121,8 +125,9 @@ void InspectorDialog::retranslate() {
 
 void InspectorDialog::refresh(const core::GameState& gs,
                               const media::AudioEngine& audio,
-                              const core::Config& cfg) {
-    auto snap = common::build_inspector_snapshot(gs, audio, cfg, i18n_, hint_highlight_enabled());
+                              const core::Config& cfg,
+                              const std::string& controller_name) {
+    auto snap = common::build_inspector_snapshot(gs, audio, cfg, i18n_, hint_highlight_enabled(), controller_name);
     val_mode_->setText(QString::fromStdString(snap.mode));
     val_stage_->setText(QString::fromStdString(snap.stage));
     val_tiles_->setText(QString::fromStdString(snap.tiles_left));
@@ -131,6 +136,7 @@ void InspectorDialog::refresh(const core::GameState& gs,
     val_backend_->setText(QString::fromStdString(snap.audio_backend));
     val_sf2_->setText(QString::fromStdString(snap.soundfont));
     val_track_->setText(QString::fromStdString(snap.track));
+    val_controller_->setText(QString::fromStdString(snap.controller));
     val_hint_->setText(QString::fromStdString(snap.next_hint));
 }
 

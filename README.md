@@ -19,7 +19,7 @@ Further info from AI:
   - `llk2-imgui` — lightweight SDL3/SDL2 + **Dear ImGui** + FreeType UI
   - `llk2-bui` — optional **BUI** Blender-themed UI (Dark/Light themes, isolated `GPL-3.0-or-later`)
   - `llk2-launcher` — standalone Qt 6 launcher & **Mod Pack Studio** (kept cleanly separated from the game executables)
-- **New Gameplay & Display Features**: **Endless Mode** (`All Levels` with bag-shuffle or `Specific Level(s) Loop`, plus optional `No Time Limit` and `Unlimited Shuffle` — never overwrites High Scores), **Borderless Fullscreen** (`F11` / `Alt+Enter`), `1×–3×` & aspect-locked **Free Resize** with Nearest/Bilinear filters, and a spoiler-safe **`F12` Inspector / Hint Assistant**.
+- **New Gameplay, Input & Display Features**: **Endless Mode** (`All Levels` with bag-shuffle or `Specific Level(s) Loop`, plus optional `No Time Limit` and `Unlimited Shuffle` — never overwrites High Scores), full **Keyboard & Gamepad/Controller support** (smart empty-cell auto-skip cursor, hot-plug SDL controllers, toggleable rumble feedback), **Borderless Fullscreen** (`F11` / `Alt+Enter`), `1×–3×` & aspect-locked **Free Resize** with Nearest/Bilinear filters, and a spoiler-safe **`F12` Inspector / Hint Assistant** (with live controller detection).
 - **Modern Audio Engine**: Switch live between **Embedded SoundFont Synth** (`TinySoundFont` + bundled `GeneralUser-GS.sf2` or any custom `.sf2`), **Native OS MIDI** (ALSA / WinMM), and **Lossless OST Audio** (`FLAC`/`WAV`/`MP3`), with individual track toggles (`101–103`) and lock-free WAV SFX mixing.
 - **Multi-Language Support**: Built-in **Traditional Chinese (`zh-TW`)**, **Simplified Chinese (`zh-CN`)**, **English (`en`)**, and **Vietnamese (`vi`)** with automatic OS locale detection on first launch (falling back to English), live switching, localized **Game Rules** overlays, redesigned dark **About** screen with clickable credits, and runtime `locales/*.json` extensibility.
 - **Cross-Platform Verified**: Built and tested cleanly (**8/8 CTest passing**) on both **Arch Linux** (GCC 16, SDL3, Qt 6) and **Windows 11 Pro 25H2** (MSYS2 UCRT64, GCC 16, SDL3, Qt 6).
@@ -77,11 +77,26 @@ cd llk2-re
 ## Controls, Storage & CLI Flags
 
 ### Controls & Shortcuts
-- **Left Click**: Select a tile / match two identical tiles with ≤ 2 turns
-- **Right Click**: Cancel current selection
-- **`F11` / `Alt+Enter`**: Toggle Borderless Fullscreen
-- **`F12`**: Toggle Inspector / Hint Assistant window
-- **`Esc`**: Close active modal dialog
+- **Mouse**:
+  - **Left Click**: Select a tile / match two identical tiles with ≤ 2 turns
+  - **Right Click**: Cancel current selection
+- **Keyboard** *(seamless hybrid switching — automatically skips empty cells)*:
+  - **Arrow Keys / `WASD`**: Move board cursor to the next occupied tile in that direction
+  - **`Tab` / `Shift+Tab`**: Jump to next / previous remaining tile in scan order
+  - **`Enter` / `Space`**: Select / match tile *(or start a new game on the title screen)*
+  - **`Backspace` / `Esc`**: Cancel current selection *(or close active modal dialog)*
+- **Gamepad / Controller** *(hot-plug Xbox, PlayStation, Switch, Steam Deck & SDL controllers)*:
+  - **D-Pad / Left Stick**: Move board cursor *(auto-skips empty cells with hold-to-repeat)*
+  - **`LB` / `RB`**: Jump to previous / next remaining tile
+  - **`A` / Cross (`RT`)**: Select / match tile, start game, or dismiss stage dialogs
+  - **`B` / Circle (`LT`)**: Cancel selection or dismiss dialogs
+  - **`Y` / Triangle or `X` / Square**: Toggle Hint Pair highlight on the board
+  - **`Back` / View**: Toggle `F12` Inspector window · **`Start` / Menu**: Start game
+  - **Controller Rumble**: Subtle haptic feedback on matches, mismatches, stage clears & shuffles *(toggleable under **Settings → Controller Rumble** and in `llk2-launcher`, ON by default)*
+- **Global Shortcuts**:
+  - **`F2`**: Start New Game *(from title screen)*
+  - **`F11` / `Alt+Enter`**: Toggle Borderless Fullscreen
+  - **`F12`**: Toggle Inspector / Hint Assistant window
 
 ### Unified Storage Locations & Portable Mode
 All game frontends and `llk2-launcher` share a single unified data folder (`config.json`, `scores.json`, `assets/`, `mods/`, `locales/`):

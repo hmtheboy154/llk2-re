@@ -107,6 +107,7 @@ endif()
 add_library(llk2_media STATIC
     cpp/media/asset_manager.cpp
     cpp/media/board_renderer.cpp
+    cpp/media/gamepad_input.cpp
     cpp/media/midi_native.cpp
     cpp/media/audio_engine.cpp
 )

@@ -33,6 +33,25 @@ void GameState::update_hover_from_last_mouse() noexcept {
         hover_r_ = -1;
         return;
     }
+    if (cursor_active_) {
+        if (cursor_c_ >= 1 && cursor_c_ <= Board::kPlayCols &&
+            cursor_r_ >= 1 && cursor_r_ <= Board::kPlayRows &&
+            board_.cell(cursor_c_, cursor_r_).occupied) {
+            hover_c_ = cursor_c_;
+            hover_r_ = cursor_r_;
+            return;
+        }
+        int pref_c = (cursor_c_ >= 1 && cursor_c_ <= Board::kPlayCols) ? cursor_c_ : 1;
+        int pref_r = (cursor_r_ >= 1 && cursor_r_ <= Board::kPlayRows) ? cursor_r_ : 1;
+        if (snap_cursor_to_nearest_occupied(pref_c, pref_r)) {
+            hover_c_ = cursor_c_;
+            hover_r_ = cursor_r_;
+            return;
+        }
+        hover_c_ = -1;
+        hover_r_ = -1;
+        return;
+    }
     float dx = last_mouse_x_ - static_cast<float>(kOffX);
     float dy = last_mouse_y_ - static_cast<float>(kOffY);
     if (dx > 0.0f && dx < 720.0f && dy > 0.0f && dy < 550.0f) {
@@ -46,6 +65,31 @@ void GameState::update_hover_from_last_mouse() noexcept {
     }
     hover_c_ = -1;
     hover_r_ = -1;
+}
+
+bool GameState::snap_cursor_to_nearest_occupied(int pref_c, int pref_r) noexcept {
+    int best_c = -1;
+    int best_r = -1;
+    int best_dist = 1000000;
+    for (int r = 1; r <= Board::kPlayRows; ++r) {
+        for (int c = 1; c <= Board::kPlayCols; ++c) {
+            if (!board_.cell(c, r).occupied) continue;
+            int d = std::abs(c - pref_c) + std::abs(r - pref_r);
+            if (d < best_dist) {
+                best_dist = d;
+                best_c = c;
+                best_r = r;
+            }
+        }
+    }
+    if (best_c < 0) {
+        cursor_c_ = -1;
+        cursor_r_ = -1;
+        return false;
+    }
+    cursor_c_ = best_c;
+    cursor_r_ = best_r;
+    return true;
 }
 
 void GameState::init_current_stage_board() {
@@ -167,6 +211,9 @@ void GameState::give_up_game() {
     animating_link_ = false;
     hover_c_ = -1;
     hover_r_ = -1;
+    cursor_active_ = false;
+    cursor_c_ = -1;
+    cursor_r_ = -1;
     clear_selection();
 }
 
@@ -179,38 +226,32 @@ int GameState::remaining_seconds() const noexcept {
 }
 
 void GameState::on_mouse_move(float x, float y) {
+    bool moved = (x >= 0.0f && y >= 0.0f) &&
+                 (std::abs(x - last_mouse_x_) > 0.5f || std::abs(y - last_mouse_y_) > 0.5f);
     last_mouse_x_ = x;
     last_mouse_y_ = y;
+    if (moved) {
+        cursor_active_ = false;
+    }
     update_hover_from_last_mouse();
 }
 
-void GameState::on_mouse_down(int button, float x, float y, uint64_t now_ms) {
-    last_mouse_x_ = x;
-    last_mouse_y_ = y;
-
+void GameState::select_tile_at(int col, int row, uint64_t now_ms) {
     if (!board_active_ || in_title_screen_ || awaiting_modal_) {
         return;
     }
 
-    // If the user clicks while a previous pair's 200ms lightning flash is still showing,
-    // immediately finish removing that pair so rapid clicking never drops inputs — EXCEPT
-    // if a deadlock shuffle or level gravity shift altered the clicked tile under the cursor!
+    // If the user activates a tile while a previous pair's 200ms lightning flash is still showing,
+    // immediately finish removing that pair so rapid input never drops — EXCEPT if a deadlock
+    // shuffle or level gravity shift altered the tile at (col, row)!
     if (animating_link_) {
         int pre_col = -1;
         int pre_row = -1;
         BoardCell pre_cell{};
-        if (button == 1) {
-            float dx = x - static_cast<float>(kOffX);
-            float dy = y - static_cast<float>(kOffY);
-            if (dx > 0.0f && dx < 720.0f && dy > 0.0f && dy < 550.0f) {
-                int c = static_cast<int>(dx) / 40;
-                int r = static_cast<int>(dy) / 50;
-                if (c >= 0 && c < Board::kCols && r >= 0 && r < Board::kRows) {
-                    pre_col = c;
-                    pre_row = r;
-                    pre_cell = board_.cell(c, r);
-                }
-            }
+        if (col >= 0 && col < Board::kCols && row >= 0 && row < Board::kRows) {
+            pre_col = col;
+            pre_row = row;
+            pre_cell = board_.cell(col, row);
         }
 
         bool did_deadlock_shuffle = complete_matched_pair(now_ms);
@@ -218,15 +259,55 @@ void GameState::on_mouse_down(int button, float x, float y, uint64_t now_ms) {
             update_hover_from_last_mouse();
             return;
         }
-        if (button == 1 && pre_col >= 0 && pre_row >= 0) {
+        if (pre_col >= 0 && pre_row >= 0) {
             const BoardCell& post_cell = board_.cell(pre_col, pre_row);
             if (!pre_cell.occupied || !post_cell.occupied ||
                 post_cell.tile_id != pre_cell.tile_id || post_cell.match_id != pre_cell.match_id) {
-                // Gravity shift moved a different tile under the cursor; don't mis-select it.
+                // Gravity shift moved a different tile under the target; don't mis-select it.
                 update_hover_from_last_mouse();
                 return;
             }
         }
+    }
+
+    if (col >= 0 && col < Board::kCols && row >= 0 && row < Board::kRows) {
+        if (sel1_c_ < 0) {
+            if (board_.cell(col, row).occupied) {
+                sel1_c_ = col;
+                sel1_r_ = row;
+                events_.push_back(GameEvent{GameEventType::PlaySfx, 202});
+            }
+        } else if (sel2_c_ < 0) {
+            if (board_.cell(col, row).occupied) {
+                if (!(col == sel1_c_ && row == sel1_r_)) {
+                    sel2_c_ = col;
+                    sel2_r_ = row;
+                    // Evaluate pair immediately for zero-latency response!
+                    process_selection(now_ms);
+                }
+            }
+        }
+    }
+    update_hover_from_last_mouse();
+}
+
+void GameState::cancel_selection() {
+    if (!board_active_ || in_title_screen_ || awaiting_modal_) {
+        return;
+    }
+    if (sel1_c_ > 0) {
+        clear_selection();
+        events_.push_back(GameEvent{GameEventType::PlaySfx, 201});
+    }
+}
+
+void GameState::on_mouse_down(int button, float x, float y, uint64_t now_ms) {
+    last_mouse_x_ = x;
+    last_mouse_y_ = y;
+    cursor_active_ = false;
+
+    if (!board_active_ || in_title_screen_ || awaiting_modal_) {
+        return;
     }
 
     if (button == 1) {
@@ -235,33 +316,235 @@ void GameState::on_mouse_down(int button, float x, float y, uint64_t now_ms) {
         if (dx > 0.0f && dx < 720.0f && dy > 0.0f && dy < 550.0f) {
             int col = static_cast<int>(dx) / 40;
             int row = static_cast<int>(dy) / 50;
-            if (col >= 0 && col < Board::kCols && row >= 0 && row < Board::kRows) {
-                if (sel1_c_ < 0) {
-                    if (board_.cell(col, row).occupied) {
-                        sel1_c_ = col;
-                        sel1_r_ = row;
-                        events_.push_back(GameEvent{GameEventType::PlaySfx, 202});
-                    }
-                } else if (sel2_c_ < 0) {
-                    if (board_.cell(col, row).occupied) {
-                        if (!(col == sel1_c_ && row == sel1_r_)) {
-                            sel2_c_ = col;
-                            sel2_r_ = row;
-                            // Evaluate pair immediately on click for zero-latency response!
-                            process_selection(now_ms);
-                        }
-                    }
+            select_tile_at(col, row, now_ms);
+            return;
+        }
+        if (animating_link_) {
+            complete_matched_pair(now_ms);
+        }
+        update_hover_from_last_mouse();
+    } else {
+        if (animating_link_) {
+            complete_matched_pair(now_ms);
+        }
+        cancel_selection();
+    }
+}
+
+bool GameState::move_cursor(int dc, int dr) noexcept {
+    if (!board_active_ || in_title_screen_ || awaiting_modal_ || board_.tiles_left() <= 0) {
+        return false;
+    }
+    dc = std::clamp(dc, -1, 1);
+    dr = std::clamp(dr, -1, 1);
+    if (dc == 0 && dr == 0) {
+        return false;
+    }
+
+    // Activate cursor from current hover/selection or snap to an occupied tile on first press
+    if (!cursor_active_) {
+        cursor_active_ = true;
+        if (hover_c_ >= 1 && hover_c_ <= Board::kPlayCols &&
+            hover_r_ >= 1 && hover_r_ <= Board::kPlayRows &&
+            board_.cell(hover_c_, hover_r_).occupied) {
+            cursor_c_ = hover_c_;
+            cursor_r_ = hover_r_;
+        } else if (sel1_c_ >= 1 && sel1_c_ <= Board::kPlayCols &&
+                   sel1_r_ >= 1 && sel1_r_ <= Board::kPlayRows &&
+                   board_.cell(sel1_c_, sel1_r_).occupied) {
+            cursor_c_ = sel1_c_;
+            cursor_r_ = sel1_r_;
+        } else {
+            int pref_c = (cursor_c_ >= 1 && cursor_c_ <= Board::kPlayCols) ? cursor_c_ : 1;
+            int pref_r = (cursor_r_ >= 1 && cursor_r_ <= Board::kPlayRows) ? cursor_r_ : 1;
+            if (snap_cursor_to_nearest_occupied(pref_c, pref_r)) {
+                hover_c_ = cursor_c_;
+                hover_r_ = cursor_r_;
+                return true;
+            }
+            return false;
+        }
+    }
+
+    if (cursor_c_ < 1 || cursor_c_ > Board::kPlayCols ||
+        cursor_r_ < 1 || cursor_r_ > Board::kPlayRows ||
+        !board_.cell(cursor_c_, cursor_r_).occupied) {
+        int pref_c = std::clamp(cursor_c_, 1, Board::kPlayCols);
+        int pref_r = std::clamp(cursor_r_, 1, Board::kPlayRows);
+        if (snap_cursor_to_nearest_occupied(pref_c, pref_r)) {
+            hover_c_ = cursor_c_;
+            hover_r_ = cursor_r_;
+            return true;
+        }
+        return false;
+    }
+
+    const int start_c = cursor_c_;
+    const int start_r = cursor_r_;
+
+    // Stage 1: Exact row / column auto-skip with wrap-around
+    if (dr == 0) {
+        for (int step = 1; step < Board::kPlayCols; ++step) {
+            int nc = 1 + ((start_c - 1 + dc * step + Board::kPlayCols) % Board::kPlayCols);
+            if (board_.cell(nc, start_r).occupied) {
+                cursor_c_ = nc;
+                hover_c_ = cursor_c_;
+                hover_r_ = cursor_r_;
+                return true;
+            }
+        }
+    } else if (dc == 0) {
+        for (int step = 1; step < Board::kPlayRows; ++step) {
+            int nr = 1 + ((start_r - 1 + dr * step + Board::kPlayRows) % Board::kPlayRows);
+            if (board_.cell(start_c, nr).occupied) {
+                cursor_r_ = nr;
+                hover_c_ = cursor_c_;
+                hover_r_ = cursor_r_;
+                return true;
+            }
+        }
+    }
+
+    // Stage 2: Current row/column has no other occupied tile — move smoothly to the
+    // nearest occupied tile in the pressed half-plane (or wrap across the board edge).
+    int best_c = -1;
+    int best_r = -1;
+    int best_score = 1000000;
+    int best_perp = 1000000;
+
+    auto eval_candidates = [&](bool strict_half_plane) {
+        const int span = (dr == 0) ? Board::kPlayCols : Board::kPlayRows;
+        for (int r = 1; r <= Board::kPlayRows; ++r) {
+            for (int c = 1; c <= Board::kPlayCols; ++c) {
+                if ((c == start_c && r == start_r) || !board_.cell(c, r).occupied) {
+                    continue;
+                }
+                int delta = (dr == 0) ? ((c - start_c) * dc) : ((r - start_r) * dr);
+                int perp = (dr == 0) ? std::abs(r - start_r) : std::abs(c - start_c);
+                if (strict_half_plane && delta <= 0) {
+                    continue;
+                }
+                int fwd = (delta > 0) ? delta : (delta + span);
+                int score = perp * 3 + fwd;
+                if (score < best_score || (score == best_score && perp < best_perp)) {
+                    best_score = score;
+                    best_perp = perp;
+                    best_c = c;
+                    best_r = r;
                 }
             }
         }
-    } else {
-        // Right/other mouse button clears selection and plays SFX 201
-        if (sel1_c_ > 0) {
-            clear_selection();
-            events_.push_back(GameEvent{GameEventType::PlaySfx, 201});
+    };
+
+    eval_candidates(true);
+    if (best_c < 0) {
+        eval_candidates(false);
+    }
+
+    if (best_c >= 1) {
+        cursor_c_ = best_c;
+        cursor_r_ = best_r;
+        hover_c_ = cursor_c_;
+        hover_r_ = cursor_r_;
+        return true;
+    }
+    return false;
+}
+
+bool GameState::jump_cursor_tile(int dir) noexcept {
+    if (!board_active_ || in_title_screen_ || awaiting_modal_ || board_.tiles_left() <= 0) {
+        return false;
+    }
+    const int step = (dir < 0) ? -1 : 1;
+    const int total = Board::kPlayCols * Board::kPlayRows;
+
+    if (!cursor_active_) {
+        cursor_active_ = true;
+        if (hover_c_ >= 1 && hover_c_ <= Board::kPlayCols &&
+            hover_r_ >= 1 && hover_r_ <= Board::kPlayRows &&
+            board_.cell(hover_c_, hover_r_).occupied) {
+            cursor_c_ = hover_c_;
+            cursor_r_ = hover_r_;
+        } else if (sel1_c_ >= 1 && sel1_c_ <= Board::kPlayCols &&
+                   sel1_r_ >= 1 && sel1_r_ <= Board::kPlayRows &&
+                   board_.cell(sel1_c_, sel1_r_).occupied) {
+            cursor_c_ = sel1_c_;
+            cursor_r_ = sel1_r_;
+        } else {
+            int start_idx = (step > 0) ? 0 : (total - 1);
+            for (int k = 0; k < total; ++k) {
+                int idx = (start_idx + step * k + total) % total;
+                int c = 1 + (idx % Board::kPlayCols);
+                int r = 1 + (idx / Board::kPlayCols);
+                if (board_.cell(c, r).occupied) {
+                    cursor_c_ = c;
+                    cursor_r_ = r;
+                    hover_c_ = cursor_c_;
+                    hover_r_ = cursor_r_;
+                    return true;
+                }
+            }
+            return false;
         }
     }
-    update_hover_from_last_mouse();
+
+    if (cursor_c_ < 1 || cursor_c_ > Board::kPlayCols ||
+        cursor_r_ < 1 || cursor_r_ > Board::kPlayRows) {
+        int start_idx = (step > 0) ? 0 : (total - 1);
+        for (int k = 0; k < total; ++k) {
+            int idx = (start_idx + step * k + total) % total;
+            int c = 1 + (idx % Board::kPlayCols);
+            int r = 1 + (idx / Board::kPlayCols);
+            if (board_.cell(c, r).occupied) {
+                cursor_c_ = c;
+                cursor_r_ = r;
+                hover_c_ = cursor_c_;
+                hover_r_ = cursor_r_;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    int cur_idx = (cursor_r_ - 1) * Board::kPlayCols + (cursor_c_ - 1);
+    for (int k = 1; k <= total; ++k) {
+        int idx = (cur_idx + step * k + total) % total;
+        int c = 1 + (idx % Board::kPlayCols);
+        int r = 1 + (idx / Board::kPlayCols);
+        if (board_.cell(c, r).occupied) {
+            cursor_c_ = c;
+            cursor_r_ = r;
+            hover_c_ = cursor_c_;
+            hover_r_ = cursor_r_;
+            return true;
+        }
+    }
+    return false;
+}
+
+void GameState::activate_cursor(uint64_t now_ms) {
+    if (!board_active_ || in_title_screen_ || awaiting_modal_ || board_.tiles_left() <= 0) {
+        return;
+    }
+    if (!cursor_active_) {
+        cursor_active_ = true;
+        if (hover_c_ >= 1 && hover_c_ <= Board::kPlayCols &&
+            hover_r_ >= 1 && hover_r_ <= Board::kPlayRows &&
+            board_.cell(hover_c_, hover_r_).occupied) {
+            cursor_c_ = hover_c_;
+            cursor_r_ = hover_r_;
+        } else {
+            int pref_c = (cursor_c_ >= 1 && cursor_c_ <= Board::kPlayCols) ? cursor_c_ : 1;
+            int pref_r = (cursor_r_ >= 1 && cursor_r_ <= Board::kPlayRows) ? cursor_r_ : 1;
+            if (!snap_cursor_to_nearest_occupied(pref_c, pref_r)) {
+                return;
+            }
+        }
+    }
+    if (cursor_c_ >= 1 && cursor_c_ <= Board::kPlayCols &&
+        cursor_r_ >= 1 && cursor_r_ <= Board::kPlayRows) {
+        select_tile_at(cursor_c_, cursor_r_, now_ms);
+    }
 }
 
 void GameState::process_selection(uint64_t now_ms) {
@@ -437,6 +720,9 @@ void GameState::acknowledge_modal(uint64_t now_ms) {
         in_title_screen_ = true;
         hover_c_ = -1;
         hover_r_ = -1;
+        cursor_active_ = false;
+        cursor_c_ = -1;
+        cursor_r_ = -1;
         clear_selection();
     } else {
         // Advance to the next stage only AFTER the StageClear modal is dismissed!

@@ -190,6 +190,58 @@ int main(int argc, char* argv[]) {
         gs.on_mouse_down(1, 21.0f + c2 * 40 + 10, 6.0f + r2 * 50 + 10, t + 10);
         app.render_headless_frame();
 
+        // 8b. Regression test: left-clicking or right-clicking a board tile must NOT trap
+        // BUI custom-widget keyboard focus (keyboard cursor/selection/cancel must work right away!)
+        app.render_headless_frame();
+        // Pick a guaranteed occupied tile unaffected by step 8's pending link flash
+        int click_c = 1, click_r = 1;
+        for (int r = 1; r <= llk2::core::Board::kPlayRows; ++r) {
+            bool found = false;
+            for (int c = 1; c <= llk2::core::Board::kPlayCols; ++c) {
+                if ((c == c1 && r == r1) || (c == c2 && r == r2)) continue;
+                if (gs.board().cell(c, r).occupied) {
+                    click_c = c;
+                    click_r = r;
+                    found = true;
+                    break;
+                }
+            }
+            if (found) break;
+        }
+        const int click_x = llk2::core::GameState::kOffX + click_c * 40 + 20;
+        const int click_y = 28 + llk2::core::GameState::kOffY + click_r * 50 + 25;
+        app.simulate_click(click_x, click_y);
+        if (gs.sel1_c() != click_c || gs.sel1_r() != click_r) {
+            std::fprintf(stderr, "[FAIL] llk2-bui smoke_test: simulated board tile click did not select tile\n");
+            app.shutdown();
+            audio.shutdown();
+            return 6;
+        }
+        app.simulate_key("Right");
+        if (!gs.cursor_active()) {
+            std::fprintf(stderr, "[FAIL] llk2-bui smoke_test: keyboard Right blocked after mouse click on board\n");
+            app.shutdown();
+            audio.shutdown();
+            return 6;
+        }
+        app.simulate_key("BackSpace");
+        if (gs.sel1_c() >= 0) {
+            std::fprintf(stderr, "[FAIL] llk2-bui smoke_test: keyboard BackSpace blocked after mouse click on board\n");
+            app.shutdown();
+            audio.shutdown();
+            return 6;
+        }
+        // Right-clicking on board to undo must also keep keyboard active
+        app.simulate_click(click_x, click_y);
+        app.simulate_right_click(click_x, click_y);
+        app.simulate_key("ISO_Left_Tab", BK_SHIFT);
+        if (!gs.cursor_active()) {
+            std::fprintf(stderr, "[FAIL] llk2-bui smoke_test: keyboard Shift+Tab blocked after right-click on board\n");
+            app.shutdown();
+            audio.shutdown();
+            return 6;
+        }
+
         // 9. Regression test: open Explain & Author modals and simulate clicking directly on
         // the image/modal (must NOT segfault and must close cleanly via deferred frame action!)
         app.open_explain_modal();

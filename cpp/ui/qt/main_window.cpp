@@ -256,18 +256,22 @@ MainWindow::MainWindow(media::AssetManager& assets,
     if (!assets_.icon_path().empty() && std::filesystem::exists(assets_.icon_path())) {
         setWindowIcon(QIcon(QString::fromStdString(assets_.icon_path().string())));
     }
+    setFocusPolicy(Qt::StrongFocus);
+    gamepad_.init();
 
     board_widget_ = new BoardWidget(renderer_, config_, this);
+    board_widget_->setFocusPolicy(Qt::StrongFocus);
     setCentralWidget(board_widget_);
 
     board_widget_->set_callbacks(
         [this](float lx, float ly) {
             int prev_hc = game_state_.hover_c();
             int prev_hr = game_state_.hover_r();
+            bool prev_cur = game_state_.cursor_active();
             game_state_.on_mouse_move(lx, ly);
             int new_hc = game_state_.hover_c();
             int new_hr = game_state_.hover_r();
-            if (new_hc != prev_hc || new_hr != prev_hr) {
+            if (new_hc != prev_hc || new_hr != prev_hr || game_state_.cursor_active() != prev_cur) {
                 renderer_.render(game_state_);
                 board_widget_->sync_tile_hover_change(prev_hc, prev_hr, new_hc, new_hr);
             }
@@ -316,8 +320,114 @@ MainWindow::MainWindow(media::AssetManager& assets,
 
 void MainWindow::closeEvent(QCloseEvent* event) {
     save_config_and_scores();
+    gamepad_.shutdown();
     audio_.shutdown();
     QMainWindow::closeEvent(event);
+}
+
+void MainWindow::keyPressEvent(QKeyEvent* event) {
+    if (!event) return;
+    if (QApplication::activeModalWidget() != nullptr) {
+        QMainWindow::keyPressEvent(event);
+        return;
+    }
+
+    const Qt::KeyboardModifiers mods = event->modifiers();
+    const bool has_cmd_mod = (mods & (Qt::AltModifier | Qt::ControlModifier | Qt::MetaModifier)) != 0;
+    if (has_cmd_mod) {
+        QMainWindow::keyPressEvent(event);
+        return;
+    }
+
+    auto sync_cursor = [this](int prev_c, int prev_r, bool prev_active) {
+        int new_c = game_state_.hover_c();
+        int new_r = game_state_.hover_r();
+        if (new_c != prev_c || new_r != prev_r || game_state_.cursor_active() != prev_active) {
+            renderer_.render(game_state_);
+            board_widget_->sync_tile_hover_change(prev_c, prev_r, new_c, new_r);
+        }
+    };
+
+    const int prev_c = game_state_.hover_c();
+    const int prev_r = game_state_.hover_r();
+    const bool prev_active = game_state_.cursor_active();
+
+    switch (event->key()) {
+        case Qt::Key_Left:
+        case Qt::Key_A:
+            if (game_state_.move_cursor(-1, 0)) {
+                sync_cursor(prev_c, prev_r, prev_active);
+            }
+            event->accept();
+            return;
+        case Qt::Key_Right:
+        case Qt::Key_D:
+            if (game_state_.move_cursor(1, 0)) {
+                sync_cursor(prev_c, prev_r, prev_active);
+            }
+            event->accept();
+            return;
+        case Qt::Key_Up:
+        case Qt::Key_W:
+            if (game_state_.move_cursor(0, -1)) {
+                sync_cursor(prev_c, prev_r, prev_active);
+            }
+            event->accept();
+            return;
+        case Qt::Key_Down:
+        case Qt::Key_S:
+            if (game_state_.move_cursor(0, 1)) {
+                sync_cursor(prev_c, prev_r, prev_active);
+            }
+            event->accept();
+            return;
+        case Qt::Key_Tab:
+            if (game_state_.jump_cursor_tile((mods & Qt::ShiftModifier) ? -1 : 1)) {
+                sync_cursor(prev_c, prev_r, prev_active);
+            }
+            event->accept();
+            return;
+        case Qt::Key_Backtab:
+            if (game_state_.jump_cursor_tile(-1)) {
+                sync_cursor(prev_c, prev_r, prev_active);
+            }
+            event->accept();
+            return;
+        case Qt::Key_Return:
+        case Qt::Key_Enter:
+        case Qt::Key_Space:
+            if (!event->isAutoRepeat()) {
+                if (game_state_.in_title_screen()) {
+                    trigger_new_game();
+                } else {
+                    uint64_t now = now_ticks_ms();
+                    game_state_.activate_cursor(now);
+                    process_game_events(now);
+                    renderer_.render(game_state_);
+                    board_widget_->sync_full(false);
+                    refresh_inspector_and_hint();
+                }
+            }
+            event->accept();
+            return;
+        case Qt::Key_Backspace:
+        case Qt::Key_Escape:
+            if (!event->isAutoRepeat() && !game_state_.in_title_screen()) {
+                uint64_t now = now_ticks_ms();
+                game_state_.cancel_selection();
+                process_game_events(now);
+                renderer_.render(game_state_);
+                board_widget_->sync_full(false);
+                refresh_inspector_and_hint();
+                event->accept();
+                return;
+            }
+            break;
+        default:
+            break;
+    }
+
+    QMainWindow::keyPressEvent(event);
 }
 
 void MainWindow::showEvent(QShowEvent* event) {
@@ -476,6 +586,12 @@ void MainWindow::build_menus() {
         set_borderless_fullscreen(checked);
     });
 
+    act_rumble_ = menu_settings_->addAction("");
+    act_rumble_->setCheckable(true);
+    connect(act_rumble_, &QAction::triggered, this, [this](bool checked) {
+        set_controller_rumble(checked);
+    });
+
     menu_settings_->addSeparator();
 
     // 3e. Legacy d4s.hst Import / Export
@@ -545,6 +661,7 @@ void MainWindow::retranslate_ui() {
     act_filter_nearest_->setText(qtr("menu.settings.filter_nearest"));
     act_filter_bilinear_->setText(qtr("menu.settings.filter_bilinear"));
     act_fullscreen_->setText(qtr("menu.settings.fullscreen"));
+    act_rumble_->setText(qtr("menu.settings.rumble"));
 
     act_import_hst_->setText(qtr("menu.settings.import_hst"));
     act_export_hst_->setText(qtr("menu.settings.export_hst"));
@@ -617,6 +734,11 @@ void MainWindow::sync_menu_states() {
         act_fullscreen_->blockSignals(true);
         act_fullscreen_->setChecked(config_.borderless_fullscreen);
         act_fullscreen_->blockSignals(false);
+    }
+    if (act_rumble_) {
+        act_rumble_->blockSignals(true);
+        act_rumble_->setChecked(config_.controller_rumble);
+        act_rumble_->blockSignals(false);
     }
 }
 
@@ -741,6 +863,12 @@ void MainWindow::set_midi_track_enabled(int track_id, bool enabled) {
     refresh_inspector_and_hint();
 }
 
+void MainWindow::set_controller_rumble(bool enabled) {
+    config_.controller_rumble = enabled;
+    sync_menu_states();
+    save_config_and_scores();
+}
+
 void MainWindow::set_inspector_visible(bool visible) {
     if (!inspector_dlg_) return;
     if (act_inspector_) {
@@ -749,7 +877,7 @@ void MainWindow::set_inspector_visible(bool visible) {
         act_inspector_->blockSignals(false);
     }
     if (visible) {
-        inspector_dlg_->refresh(game_state_, audio_, config_);
+        inspector_dlg_->refresh(game_state_, audio_, config_, gamepad_.active_name());
         refresh_inspector_and_hint();
         inspector_dlg_->show();
         inspector_dlg_->raise();
@@ -767,14 +895,14 @@ void MainWindow::set_hint_highlight(bool enabled) {
 }
 
 void MainWindow::refresh_inspector_and_hint() {
-    auto snap = common::build_inspector_snapshot(game_state_, audio_, config_, i18n_);
+    auto snap = common::build_inspector_snapshot(game_state_, audio_, config_, i18n_, show_hint_overlay_, gamepad_.active_name());
     if (board_widget_) {
         board_widget_->set_hint_overlay(
             show_hint_overlay_ && snap.has_valid_hint,
             snap.hint_c1, snap.hint_r1, snap.hint_c2, snap.hint_r2);
     }
     if (inspector_dlg_ && inspector_dlg_->isVisible()) {
-        inspector_dlg_->refresh(game_state_, audio_, config_);
+        inspector_dlg_->refresh(game_state_, audio_, config_, gamepad_.active_name());
     }
 }
 
@@ -783,20 +911,71 @@ void MainWindow::on_game_tick() {
     int prev_rem = game_state_.remaining_seconds();
     bool prev_anim = game_state_.animating_link();
     int prev_tiles = game_state_.board().tiles_left();
+    int prev_hc = game_state_.hover_c();
+    int prev_hr = game_state_.hover_r();
+    bool prev_cur = game_state_.cursor_active();
+
+    QWidget* modal = QApplication::activeModalWidget();
+    const bool focused = isActiveWindow() || (modal != nullptr);
+    auto ga = gamepad_.poll(now, focused);
+    bool pad_board_dirty = false;
+
+    if (modal != nullptr) {
+        // Allow dismissing stage-clear / game-over QMessageBox hands-free with controller A/B
+        if (auto* msg = qobject_cast<QMessageBox*>(modal); msg && (ga.confirm || ga.cancel)) {
+            msg->accept();
+        }
+    } else if (ga.any()) {
+        if (ga.toggle_inspector) {
+            set_inspector_visible(!(inspector_dlg_ && inspector_dlg_->isVisible()));
+        }
+        if (ga.toggle_hint && !game_state_.in_title_screen()) {
+            set_hint_highlight(!show_hint_overlay_);
+        }
+        if (game_state_.in_title_screen()) {
+            if (ga.confirm || ga.start_pressed) {
+                trigger_new_game();
+                pad_board_dirty = true;
+            }
+        } else {
+            if (ga.move_dc != 0 || ga.move_dr != 0) {
+                game_state_.move_cursor(ga.move_dc, ga.move_dr);
+            }
+            if (ga.jump_dir != 0) {
+                game_state_.jump_cursor_tile(ga.jump_dir);
+            }
+            if (ga.confirm) {
+                game_state_.activate_cursor(now);
+                pad_board_dirty = true;
+            } else if (ga.cancel) {
+                game_state_.cancel_selection();
+                pad_board_dirty = true;
+            }
+        }
+    }
 
     game_state_.tick(now);
     audio_.update(config_);
 
     process_game_events(now);
 
-    if (game_state_.remaining_seconds() != prev_rem ||
+    if (pad_board_dirty ||
+        game_state_.remaining_seconds() != prev_rem ||
         game_state_.animating_link() != prev_anim ||
         game_state_.board().tiles_left() != prev_tiles) {
         renderer_.render(game_state_);
         board_widget_->sync_full(false);
         refresh_inspector_and_hint();
+    } else if (game_state_.hover_c() != prev_hc ||
+               game_state_.hover_r() != prev_hr ||
+               game_state_.cursor_active() != prev_cur) {
+        renderer_.render(game_state_);
+        board_widget_->sync_tile_hover_change(prev_hc, prev_hr, game_state_.hover_c(), game_state_.hover_r());
+        if (inspector_dlg_ && inspector_dlg_->isVisible()) {
+            inspector_dlg_->refresh(game_state_, audio_, config_, gamepad_.active_name());
+        }
     } else if (inspector_dlg_ && inspector_dlg_->isVisible()) {
-        inspector_dlg_->refresh(game_state_, audio_, config_);
+        inspector_dlg_->refresh(game_state_, audio_, config_, gamepad_.active_name());
     }
 }
 
@@ -821,6 +1000,7 @@ void MainWindow::process_game_events(uint64_t now_ms) {
         switch (ev.type) {
             case core::GameEventType::PlaySfx:
                 audio_.play_sfx(ev.sfx_id);
+                gamepad_.rumble_for_sfx(ev.sfx_id, config_.controller_rumble);
                 break;
 
             case core::GameEventType::StageClearModal: {

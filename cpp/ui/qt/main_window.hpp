@@ -7,11 +7,13 @@
 #include "media/asset_manager.hpp"
 #include "media/audio_engine.hpp"
 #include "media/board_renderer.hpp"
+#include "media/gamepad_input.hpp"
 
 #include <QAction>
 #include <QActionGroup>
 #include <QCloseEvent>
 #include <QImage>
+#include <QKeyEvent>
 #include <QMainWindow>
 #include <QMenu>
 #include <QMouseEvent>
@@ -87,6 +89,7 @@ public:
     void set_scale_mode(core::WindowScaleMode mode);
     void set_scale_filter(core::ScaleFilter filter);
     void set_borderless_fullscreen(bool enabled);
+    void set_controller_rumble(bool enabled);
     void set_midi_backend(core::MidiBackend backend);
     void set_midi_track_enabled(int track_id, bool enabled);
     void set_inspector_visible(bool visible);
@@ -98,6 +101,7 @@ public:
 protected:
     void closeEvent(QCloseEvent* event) override;
     void showEvent(QShowEvent* event) override;
+    void keyPressEvent(QKeyEvent* event) override;
 
 private:
     void build_menus();
@@ -130,6 +134,7 @@ private:
 
     core::GameState game_state_;
     media::BoardRenderer renderer_;
+    media::GamepadInput gamepad_;
     BoardWidget* board_widget_ = nullptr;
     InspectorDialog* inspector_dlg_ = nullptr;
     QTimer* tick_timer_ = nullptr;
@@ -181,6 +186,7 @@ private:
     QAction* act_filter_nearest_ = nullptr;
     QAction* act_filter_bilinear_ = nullptr;
     QAction* act_fullscreen_ = nullptr;
+    QAction* act_rumble_ = nullptr;
 
     QAction* act_import_hst_ = nullptr;
     QAction* act_export_hst_ = nullptr;

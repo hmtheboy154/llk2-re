@@ -11,6 +11,7 @@ This document summarizes what the **Unofficial Remastered (`remastered`)** editi
 | **Platforms** | Windows 95/98/XP (32-bit VB5 + Win32 GDI) | **Linux, Windows, macOS** (native 64-bit C++20 + SDL3/SDL2) |
 | **UI Frontends** | Single fixed VB5 Win32 form | **3 separate frontends** (`llk2-qt`, `llk2-imgui`, `llk2-bui`) + standalone **`llk2-launcher`** |
 | **Game Modes** | Classic 7-stage campaign only | Classic 7-stage campaign + **Endless Mode** (All Levels / Specific Level(s) Loop, bag shuffle, No Time Limit, Unlimited Shuffle) |
+| **Input & Controls** | Mouse only | **Mouse + Keyboard (`Arrows`/`WASD`/`Tab`/`Enter`/`Space`) + Hot-Plug Gamepads** (smart empty-cell auto-skip cursor + toggleable Controller Rumble) |
 | **Display & Scaling** | Fixed `768×550` window only | **`1×`, `1.5×`, `2×`, `3×`, Free Resize** (keep aspect), **Nearest / Bilinear** filters, **Borderless Fullscreen** (`F11` / `Alt+Enter`) |
 | **Languages** | Hardcoded Big5 (`v1.02`) or GBK (`v1.00-cn`) | Built-in **`zh-TW`, `zh-CN`, `en`, `vi`** with live switching, localized **Game Rules** overlays, and extensible `locales/*.json` |
 | **Music & Audio** | Win32 MCI MIDI + `PlaySound` WAV (no track selection; Error 70 loop bug in `v1.00-cn`) | **3 playback backends** (Embedded `GeneralUser-GS` SoundFont synth, Native OS MIDI, Lossless OST FLAC/WAV/MP3), custom `.sf2`, per-track toggles (`101–103`), lock-free WAV SFX mixer |
@@ -59,7 +60,24 @@ Open **`Game -> Endless Mode...`** in any frontend to start an Endless session:
 
 ---
 
-## 3. Display, Window Scaling & Borderless Fullscreen
+## 3. Keyboard & Gamepad / Controller Support
+
+All three game frontends (`llk2-qt`, `llk2-imgui`, `llk2-bui`) support full **Keyboard** and **SDL Gamepad/Controller** play seamlessly alongside mouse input:
+
+- **Smart Empty-Cell Auto-Skip Cursor**: Moving with **Arrow Keys / `WASD`** or **D-Pad / Left Stick** skips empty spaces along your row or column (wrapping smoothly at edges) and falls back to the nearest remaining tile in that direction when a sparse row/column has no other tiles — so you never waste taps crossing blank board areas or get stuck in endgame.
+- **High-Contrast Cursor & Hybrid Switching**: Keyboard/gamepad navigation renders a crisp 3-ring cyan/white tile cursor distinct from the classic red/yellow mouse hover box; moving the mouse immediately returns to classic mouse hover without conflict.
+- **Full Controller Controls (Hot-Plug)**: Works out of the box with Xbox, PlayStation, Switch Pro, Steam Deck, and generic SDL-mapped controllers (plug in or unplug anytime while running):
+  - **D-Pad / Left Stick**: Move tile cursor (with hold-to-repeat)
+  - **`LB` / `RB`** (or **`Shift+Tab` / `Tab`**): Jump to previous / next remaining tile in scan order
+  - **`A` / Cross / `RT`** (or **`Enter` / `Space`**): Select / match tile, start game on title screen, or dismiss stage modals hands-free
+  - **`B` / Circle / `LT`** (or **`Backspace` / `Esc`**): Cancel current tile selection or dismiss dialogs
+  - **`Y` / Triangle / `X` / Square**: Toggle Hint Pair board highlight
+  - **`Back` / View**: Toggle `F12` Inspector · **`Start` / Menu**: Start New Game
+- **Toggleable Haptic Rumble**: Distinct subtle rumble pulses for tile selection, valid matches, mismatches, stage clears, and deadlock auto-shuffles — **ON by default**, persisted in `config.json`, and toggleable in **Settings → Controller Rumble** across all 3 frontends and `llk2-launcher`.
+
+---
+
+## 4. Display, Window Scaling & Borderless Fullscreen
 
 - **Window Scale Presets**: Switch live between `1× (768×550 Native)`, `1.5× (1152×825)`, `2× (1536×1100)`, `3× (2304×1650)`, and **`Free Resize (Keep Aspect)`** with clean black letterboxing.
 - **Scaling Filter**: Choose **Crisp Pixels (Nearest)** for sharp retro pixels or **Smooth (Bilinear)** for softer scaling.
@@ -67,7 +85,7 @@ Open **`Game -> Endless Mode...`** in any frontend to start an Endless session:
 
 ---
 
-## 4. Three Independent UI Frontends
+## 5. Three Independent UI Frontends
 
 All three game executables share the exact same `libllk2_core` engine, `libllk2_media` renderer/audio stack, settings, and high scores, and can be launched directly without the launcher:
 
@@ -79,7 +97,7 @@ All three game executables share the exact same `libllk2_core` engine, `libllk2_
 
 ---
 
-## 5. Standalone Launcher & Mod Studio (`llk2-launcher`)
+## 6. Standalone Launcher & Mod Studio (`llk2-launcher`)
 
 A dedicated Qt 6 launcher (`CC0-1.0`) kept separate from the game binaries so the games themselves stay clean and fast while pre-launch setup and modding live in one place:
 
@@ -94,7 +112,7 @@ A dedicated Qt 6 launcher (`CC0-1.0`) kept separate from the game binaries so th
 
 ---
 
-## 6. Audio & Music Backends
+## 7. Audio & Music Backends
 
 - **Embedded SoundFont Synth** *(default)*: Uses `TinySoundFont` + `TinyMidiLoader` with bundled **GeneralUser-GS.sf2** (plus support for selecting any custom `.sf2` / `.sf3` file), giving rich General MIDI playback on every OS with zero driver setup.
 - **Native OS MIDI Device**: Routes MIDI playback to ALSA Sequencer on Linux or WinMM on Windows.
@@ -104,7 +122,7 @@ A dedicated Qt 6 launcher (`CC0-1.0`) kept separate from the game binaries so th
 
 ---
 
-## 7. Localization, Game Rules Overlays & Redesigned About Screen
+## 8. Localization, Game Rules Overlays & Redesigned About Screen
 
 - **4 Built-In Languages**: **Traditional Chinese (`zh-TW`)**, **Simplified Chinese (`zh-CN`)**, **English (`en`)**, and **Vietnamese (`vi`)** — embedded directly into the binaries from `locales/*.json` at build time, with **automatic OS locale detection** on first launch (Windows `GetUserDefaultLocaleName` / Linux `LANGUAGE`, `LC_ALL`, `LC_MESSAGES`, `LANG`, falling back to English for unsupported locales), runtime `locales/*.json` override/addition support, and instant live switching.
 - **Localized Game Rules**: Preserves the original `Form_Explain_Picture` tile diagrams and red frame while rendering localized rules text and controls for `en` and `vi` (and supports drop-in per-locale `assets/locales/<lang>/Form_Explain_Picture.png` overrides).
@@ -112,15 +130,15 @@ A dedicated Qt 6 launcher (`CC0-1.0`) kept separate from the game binaries so th
 
 ---
 
-## 8. `F12` Inspector / Hint Assistant
+## 9. `F12` Inspector / Hint Assistant
 
 Press **`F12`** (or toggle **`Settings -> Inspector / Hint Assistant`**) for a non-modal live status window showing:
-- Current mode (`Title Screen` / `Playing` / `Endless`), stage & gravity shift rule, remaining tiles (`N / 144`), lives/score, remaining time (`Unlimited` when No Time Limit is active), audio backend, active SoundFont, and currently playing track.
+- Current mode (`Title Screen` / `Playing` / `Endless`), stage & gravity shift rule, remaining tiles (`N / 144`), lives/score, remaining time (`Unlimited` when No Time Limit is active), audio backend, active SoundFont, currently playing track, and **connected Controller name** (`None` when disconnected).
 - **Spoiler-Safe Hint Assistant**: Valid-pair coordinates stay **Hidden** when you open the Inspector; checking **"Highlight Hint Pair on Board"** reveals the coordinates and draws a golden highlight around a valid pair on the board.
 
 ---
 
-## 9. Cross-Platform Storage & Legacy `d4s.hst` Compatibility
+## 10. Cross-Platform Storage & Legacy `d4s.hst` Compatibility
 
 - **Unified User Data Folder**:
   - **Linux**: `$XDG_DATA_HOME/llk2` *(defaults to `~/.local/share/llk2`)*

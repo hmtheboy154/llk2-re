@@ -4,6 +4,7 @@
 #include "media/asset_manager.hpp"
 #include "media/audio_engine.hpp"
 #include "media/board_renderer.hpp"
+#include "media/gamepad_input.hpp"
 #include "ui/common/ui_helpers.hpp"
 
 #undef NDEBUG
@@ -82,10 +83,25 @@ static void test_renderer_and_audio_with_assets(const std::filesystem::path& ass
     }
     assert(non_black_title > 50000);
 
-    // Start new game and render active board + hover + pair selection
+    // Start new game and render active board + hover + cursor + pair selection
     gs.start_new_game(1000);
     gs.on_mouse_move(21.0f + 2 * 40 + 10, 6.0f + 2 * 50 + 10);
     renderer.render(gs);
+
+    // Activate keyboard/gamepad cursor and verify high-contrast 3-ring Cyan/White/Cyan frame renders
+    assert(gs.move_cursor(1, 0));
+    assert(gs.cursor_active());
+    renderer.render(gs);
+    {
+        int base_x = gs.cursor_c() * 40 + 21;
+        int base_y = gs.cursor_r() * 50 + 6;
+        size_t idx1 = (static_cast<size_t>(base_y + 1) * 768 + (base_x + 1)) * 4;
+        size_t idx2 = (static_cast<size_t>(base_y + 2) * 768 + (base_x + 2)) * 4;
+        size_t idx3 = (static_cast<size_t>(base_y + 3) * 768 + (base_x + 3)) * 4;
+        assert(renderer.canvas().pixels[idx1 + 0] == 0 && renderer.canvas().pixels[idx1 + 1] == 220 && renderer.canvas().pixels[idx1 + 2] == 255);
+        assert(renderer.canvas().pixels[idx2 + 0] == 255 && renderer.canvas().pixels[idx2 + 1] == 255 && renderer.canvas().pixels[idx2 + 2] == 255);
+        assert(renderer.canvas().pixels[idx3 + 0] == 0 && renderer.canvas().pixels[idx3 + 1] == 170 && renderer.canvas().pixels[idx3 + 2] == 255);
+    }
 
     // Use Board::hint_x1..y2 (cached by start_new_game -> has_valid_move) to click a guaranteed linkable pair
     int c1 = static_cast<int>(std::lround(gs.board().hint_x1()));
@@ -189,11 +205,12 @@ static void test_renderer_and_audio_with_assets(const std::filesystem::path& ass
 
     const char* required_keys[] = {
         "app.title", "menu.game", "menu.game.endless", "menu.audio", "menu.settings", "menu.about",
-        "menu.settings.language", "menu.settings.fullscreen", "menu.settings.inspector", "menu.settings.theme",
+        "menu.settings.language", "menu.settings.fullscreen", "menu.settings.rumble", "menu.settings.inspector", "menu.settings.theme",
         "dialog.explain.title", "dialog.btn.close", "dialog.endless.title", "dialog.endless.note",
         "dialog.endless.all_levels", "dialog.endless.shuffle", "dialog.endless.specific_levels",
         "dialog.endless.no_time_limit", "dialog.endless.unlimited_shuffle", "dialog.endless.stage_fmt",
         "inspector.title", "inspector.mode.endless", "inspector.time_unlimited", "inspector.lives_unlimited",
+        "inspector.controller", "inspector.controller_none",
         "inspector.hint_hidden", "inspector.highlight_hint",
         "about.credits.original", "about.credits.sc_trans", "about.credits.remaster",
         "msg.stage_clear.body", "msg.endless_clear.body", "msg.endless_clear_notime.body",
@@ -201,6 +218,7 @@ static void test_renderer_and_audio_with_assets(const std::filesystem::path& ass
         "launcher.title", "launcher.tab.play", "launcher.tab.assets", "launcher.tab.settings",
         "launcher.tab.scores", "launcher.tab.diagnostics", "launcher.play.btn_launch",
         "launcher.assets.btn_extract", "launcher.assets.btn_check_pack",
+        "launcher.settings.rumble",
         "launcher.diag.mode_user", "launcher.diag.mode_portable"
     };
     for (const char* lang : {"zh-TW", "zh-CN", "en", "vi"}) {
@@ -234,13 +252,27 @@ static void test_renderer_and_audio_with_assets(const std::filesystem::path& ass
         assert(!laid.chunks.empty() && laid.total_height > 0.0f);
     }
 
-    // Verify hint coordinates stay hidden until reveal_hint is enabled
+    // Verify hint coordinates stay hidden until reveal_hint is enabled, and Controller field formats cleanly
     assert(i18n.set_language("en"));
     auto snap_hidden = llk2::ui::common::build_inspector_snapshot(gs, audio, cfg, i18n, false);
-    auto snap_shown = llk2::ui::common::build_inspector_snapshot(gs, audio, cfg, i18n, true);
+    auto snap_shown = llk2::ui::common::build_inspector_snapshot(gs, audio, cfg, i18n, true, "Xbox Series X Controller");
     assert(snap_hidden.has_valid_hint);
     assert(snap_hidden.next_hint == i18n.tr("inspector.hint_hidden"));
+    assert(snap_hidden.controller == i18n.tr("inspector.controller_none"));
     assert(snap_shown.next_hint.find("<->") != std::string::npos);
+    assert(snap_shown.controller == "Xbox Series X Controller");
+
+    // 4. Verify GamepadInput lifecycle is safe in headless environments
+    {
+        GamepadInput pad;
+        pad.init();
+        auto acts = pad.poll(1000, false);
+        assert(!acts.any());
+        pad.rumble(0.2f, 0.4f, 50, true);
+        pad.rumble_for_sfx(203, true);
+        pad.rumble_for_sfx(205, false);
+        pad.shutdown();
+    }
 
     // Verify Inspector snapshot in Endless Mode (Unlimited time + Unlimited lives + Endless #1 stage)
     llk2::core::EndlessConfig ecfg;

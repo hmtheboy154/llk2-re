@@ -164,16 +164,23 @@ void BoardRenderer::render_board(const core::GameState& state) {
     // Fast copy of cached Pic_Buffer (1.68 MB memcpy, < 0.03 ms)
     std::memcpy(canvas_.pixels.data(), base_cache_.pixels.data(), base_cache_.pixels.size());
 
-    // Overlay 3-ring hover highlight box on the hovered tile (when not in link flash)
+    // Overlay 3-ring hover/cursor highlight box on the hovered tile (when not in link flash)
     if (!state.animating_link()) {
         int hc = state.hover_c();
         int hr = state.hover_r();
         if (hc >= 0 && hc < core::Board::kCols && hr >= 0 && hr < core::Board::kRows && board.cell(hc, hr).occupied) {
             int px = core::GameState::kOffX + hc * TILE_W;
             int py = core::GameState::kOffY + hr * TILE_H;
-            draw_hollow_rect(px + 1, py + 1, px + 39, py + 49, 255, 0, 0);   // QBColor(12) Red
-            draw_hollow_rect(px + 2, py + 2, px + 38, py + 48, 255, 255, 0); // QBColor(14) Yellow
-            draw_hollow_rect(px + 3, py + 3, px + 37, py + 47, 255, 0, 0);   // QBColor(12) Red
+            if (state.cursor_active()) {
+                // High-contrast Cyan/White/Cyan frame for keyboard & gamepad cursor
+                draw_hollow_rect(px + 1, py + 1, px + 39, py + 49, 0, 220, 255);
+                draw_hollow_rect(px + 2, py + 2, px + 38, py + 48, 255, 255, 255);
+                draw_hollow_rect(px + 3, py + 3, px + 37, py + 47, 0, 170, 255);
+            } else {
+                draw_hollow_rect(px + 1, py + 1, px + 39, py + 49, 255, 0, 0);   // QBColor(12) Red
+                draw_hollow_rect(px + 2, py + 2, px + 38, py + 48, 255, 255, 0); // QBColor(14) Yellow
+                draw_hollow_rect(px + 3, py + 3, px + 37, py + 47, 255, 0, 0);   // QBColor(12) Red
+            }
         }
     } else {
         // Overlay 3-pass link lightning beam

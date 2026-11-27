@@ -24,7 +24,8 @@ public:
     void retranslate();
     void refresh(const core::GameState& gs,
                  const media::AudioEngine& audio,
-                 const core::Config& cfg);
+                 const core::Config& cfg,
+                 const std::string& controller_name = {});
 
     bool hint_highlight_enabled() const noexcept;
     void set_hint_highlight_enabled(bool enabled);
@@ -53,6 +54,8 @@ private:
     QLabel* val_sf2_ = nullptr;
     QLabel* key_track_ = nullptr;
     QLabel* val_track_ = nullptr;
+    QLabel* key_controller_ = nullptr;
+    QLabel* val_controller_ = nullptr;
 
     QLabel* key_hint_ = nullptr;
     QLabel* val_hint_ = nullptr;

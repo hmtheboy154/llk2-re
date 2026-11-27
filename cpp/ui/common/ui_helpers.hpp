@@ -413,6 +413,7 @@ struct InspectorSnapshot {
     std::string audio_backend;
     std::string soundfont;
     std::string track;
+    std::string controller;
     std::string next_hint;
     bool has_valid_hint = false;
     int hint_c1 = -1;
@@ -484,7 +485,8 @@ inline InspectorSnapshot build_inspector_snapshot(const core::GameState& gs,
                                                   const media::AudioEngine& audio,
                                                   const core::Config& cfg,
                                                   const core::I18n& i18n,
-                                                  bool reveal_hint = false) {
+                                                  bool reveal_hint = false,
+                                                  const std::string& controller_name = {}) {
     InspectorSnapshot snap;
     if (gs.in_title_screen()) {
         snap.mode = i18n.tr("inspector.mode.title");
@@ -515,6 +517,7 @@ inline InspectorSnapshot build_inspector_snapshot(const core::GameState& gs,
     int track_id = (audio.current_midi_track() >= 0) ? (audio.current_midi_track() + 101) : 101;
     snap.track = std::to_string(track_id) + " (" +
                  (audio.is_midi_playing() ? i18n.tr("inspector.playing") : i18n.tr("inspector.stopped")) + ")";
+    snap.controller = controller_name.empty() ? i18n.tr("inspector.controller_none") : controller_name;
 
     int c1 = static_cast<int>(std::lround(gs.board().hint_x1()));
     int r1 = static_cast<int>(std::lround(gs.board().hint_y1()));
